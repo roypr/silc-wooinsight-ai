@@ -48,7 +48,7 @@ class SILC_WIA_SQL_Validator {
 		'RENAME', 'USE',
 		'INFORMATION_SCHEMA', 'MYSQL', 'PG_SLEEP', 'SLEEP',
 		'BENCHMARK', 'WAITFOR', 'DELAY',
-		'\\/\\*', '\\*\\/', '--', '#', ';',
+		'\\/\\*', '\\*\\/', '--', '#',
 		'CHAR(', 'UNICODE(', 'NCHAR(',
 	);
 
@@ -97,8 +97,13 @@ class SILC_WIA_SQL_Validator {
 			}
 		}
 
-		// 3. Block multi-statement (semicolon inside).
-		$stripped = preg_replace( "/'[^']*'/", '', $sql ); // Remove string literals.
+		// 3. Normalize: strip trailing semicolons first (they are not multi-statement).
+		$sql = rtrim( $sql, "; \t\n\r\0\x0B" );
+
+		// Then check for internal semicolons that would indicate multi-statement.
+		// Strip both single and double-quoted string literals to avoid false positives.
+		$stripped = preg_replace( "/'[^']*'/", '', $sql );
+		$stripped = preg_replace( '/"[^"]*"/', '', $stripped );
 		if ( substr_count( $stripped, ';' ) > 0 ) {
 			$result['error'] = __( 'Multi-statement queries are not allowed.', 'silc-wooinsight-ai' );
 			return $result;
