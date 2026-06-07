@@ -70,88 +70,97 @@
 
 	// ----------------------------------------------------------------------- //
 	//  TRANSFORMER.JS LOADER
-	// ----------------------------------------------------------------------- //
-
 	/**
-	 * Load Transformer.js from CDN and attempt to initialize the model.
+	 * Load Transformer.js via Web Worker and manage model lifecycle.
 	 */
 	function createModelLoader() {
-		var modelLoaded = false;
-		var modelError  = null;
-		var pipeline    = null;
-		var loading     = false;
+		var state   = 'idle';     // idle | loading | ready | error | generating
+		var modelError = null;
+		var worker     = null;
+		var genResolve = null;
+		var genReject  = null;
+
+		function handleMessage( e ) {
+			var msg = e.data;
+
+			if ( msg.type === 'ready' ) {
+				state = 'ready';
+			} else if ( msg.type === 'error' ) {
+				modelError = msg.error;
+				if ( state === 'generating' && genReject ) {
+					genReject( new Error( msg.error ) );
+					genResolve = null;
+					genReject  = null;
+				}
+				state = state === 'generating' ? 'ready' : 'error';
+			} else if ( msg.type === 'result' ) {
+				state = 'ready';
+				if ( genResolve ) {
+					var text = msg.data[ 0 ].generated_text || '';
+					var sql  = text.substring( text.indexOf( 'SELECT' ) );
+					sql = sql.split( '\n' )[ 0 ];
+					sql = sql.replace( /```sql|```/gi, '' ).trim();
+					genResolve( sql );
+					genResolve = null;
+					genReject  = null;
+				}
+			}
+		}
 
 		return {
-			getStatus: function () {
-				if ( loading ) return 'loading';
-				if ( modelLoaded ) return 'ready';
-				if ( modelError ) return 'error';
-				return 'idle';
-			},
-			getError: function () { return modelError; },
-			isReady:   function () { return modelLoaded; },
-			getPipeline: function () { return pipeline; },
+			getStatus: function () { return state; },
+			getError:  function () { return modelError; },
+			isReady:   function () { return state === 'ready'; },
 
 			load: function () {
-				if ( loading || modelLoaded ) return;
-				loading = true;
+				if ( state === 'loading' || state === 'ready' ) return;
+				state       = 'loading';
+				modelError  = null;
 
-				var self = this;
+				var workerUrl = data.pluginUrl + 'assets/js/worker.js';
+				if ( ! workerUrl ) {
+					state      = 'error';
+					modelError = 'Could not determine worker URL.';
+					return;
+				}
 
-				// Step 1: Dynamically import @huggingface/transformers as an ES module.
-				import( 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0' )
-					.then( function ( module ) {
-						var pipelineFn = module.pipeline;
+				try {
+					worker = new Worker( workerUrl, { type: 'module' } );
+				} catch ( e ) {
+					state      = 'error';
+					modelError = 'Failed to create Web Worker.';
+					return;
+				}
 
-						// Step 2: Create a text-generation pipeline using the ONNX model.
-						var modelId = 'onnx-community/Qwen2.5-Coder-0.5B-Instruct';
-
-						return pipelineFn( 'text-generation', modelId, {
-							quantized: true,
-							device: 'wasm',
-						} );
-					} )
-					.then( function ( pipe ) {
-						pipeline    = pipe;
-						modelLoaded = true;
-						loading     = false;
-						console.log( 'SILC WooInsight AI: Model loaded successfully.' );
-					} )
-					.catch( function ( err ) {
-						modelError = err.message || 'Unknown error loading model.';
-						loading    = false;
-						console.warn( 'SILC WooInsight AI: Model load failed -', modelError );
-					} );
+				worker.addEventListener( 'message', handleMessage );
+				worker.addEventListener( 'error', function ( e ) {
+					modelError = e.message || 'Worker error.';
+					state      = 'error';
+					if ( genReject ) {
+						genReject( new Error( modelError ) );
+						genResolve = null;
+						genReject  = null;
+					}
+				} );
 			},
 
-			/**
-			 * Generate SQL from a user question using the loaded model.
-			 * Falls back to a simple template-based approach if model isn't available.
-			 */
 			generateSQL: function ( question, schemaContext ) {
-				if ( ! modelLoaded || ! pipeline ) {
+				if ( state !== 'ready' || ! worker ) {
 					return Promise.reject( new Error( 'Model not loaded.' ) );
 				}
 
 				var prompt = schemaContext + '\n\nUSER QUESTION: ' + question + '\n\nGenerate ONLY the SQL query:';
+				state = 'generating';
 
-				return pipeline( prompt, {
-					max_new_tokens: 300,
-					temperature: 0.2,
-					do_sample: false,
-				} ).then( function ( result ) {
-					var text = result[ 0 ].generated_text || '';
-					// Extract just the SQL part (after the prompt).
-					var sql = text.substring( text.indexOf( 'SELECT' ) );
-					sql = sql.split( '\n' )[ 0 ]; // First line only.
-					// Clean up.
-					sql = sql.replace( /```sql|```/gi, '' ).trim();
-					return sql;
+				return new Promise( function ( resolve, reject ) {
+					genResolve = resolve;
+					genReject  = reject;
+					worker.postMessage( { type: 'generate', prompt: prompt } );
 				} );
 			},
 		};
 	}
-
+	
 	// ----------------------------------------------------------------------- //
 	//  MAIN DASHBOARD COMPONENT
 	// ----------------------------------------------------------------------- //
@@ -164,9 +173,6 @@
 		var _useState2 = useState( '' );
 		var sqlInput    = _useState2[ 0 ];
 		var setSqlInput = _useState2[ 1 ];
-
-		var _useState3 = useState( null );
-		var results     = _useState3[ 0 ];
 		var setResults  = _useState3[ 1 ];
 
 		var _useState4 = useState( false );
@@ -222,14 +228,10 @@
 			// Attempt to load the model (async, non-blocking).
 			loader.load();
 
-			// Poll model status.
+			// Poll model status (keeps running to catch 'generating' state too).
 			var interval = setInterval( function () {
-				var status = loader.getStatus();
-				setModelStatus( status );
-				if ( status === 'ready' || status === 'error' ) {
-					clearInterval( interval );
-				}
-			}, 500 );
+				setModelStatus( loader.getStatus() );
+			}, 1000 );
 
 			return function () { clearInterval( interval ); };
 		}, [] );
@@ -402,14 +404,19 @@
 		 */
 		function renderModelStatus() {
 			var statusMap = {
-				'idle':    { text: 'AI: Idle', className: 'loading' },
-				'loading': { text: 'AI: Loading model...', className: 'loading' },
-				'ready':   { text: 'AI: Ready', className: 'ready' },
-				'error':   { text: 'AI: Unavailable (using fallback)', className: 'error' },
+				'idle':    { text: 'AI model: Idle',       icon: 'marker',    className: 'idle' },
+				'loading': { text: 'AI model: Loading...',  icon: 'update',    className: 'loading' },
+				'ready':   { text: 'AI model: Ready',      icon: 'yes-alt',   className: 'ready' },
+				'error':   { text: 'AI model: Unavailable', icon: 'warning',  className: 'error' },
+				'generating': { text: 'AI model: Generating SQL...', icon: 'update', className: 'generating' },
 			};
 
 			var info = statusMap[ modelStatus ] || statusMap.idle;
-			return el( 'span', { className: 'silc-wia-model-status ' + info.className }, info.text );
+			return el( 'span', { className: 'silc-wia-model-status ' + info.className },
+				el( Icon, { icon: info.icon } ),
+				' ',
+				info.text
+			);
 		}
 
 		return el( 'div', { className: 'silc-wia-dashboard' },
@@ -425,6 +432,26 @@
 			el( 'div', { className: 'silc-wia-flex silc-wia-items-center silc-wia-gap-2 silc-wia-mb-3' },
 				renderModelStatus()
 			),
+
+			// Loading notice shown while the model is downloading.
+			modelStatus === 'loading' ? el( Notice, {
+				status: 'info',
+				isDismissible: false,
+				className: 'silc-wia-model-loading-notice',
+			},
+				el( 'div', { className: 'silc-wia-flex silc-wia-items-center silc-wia-gap-2' },
+					el( Spinner, {} ),
+					el( 'span', null, 'Downloading AI model — this is a one-time setup. The page will remain usable in the meantime.' )
+				)
+			) : null,
+
+			// Model-ready notice (dismissible).
+			modelStatus === 'ready' ? el( Notice, {
+				status: 'success',
+				isDismissible: true,
+				onRemove: function () { /* let it disappear */ },
+				className: 'silc-wia-model-ready-notice',
+			}, 'AI model loaded and ready. Queries will use on-device AI for SQL generation.' ) : null,
 
 			// Main content grid.
 			el( 'div', { className: 'silc-wia-main-content' },
@@ -559,7 +586,6 @@
 			)
 		);
 	}
-
 	// ----------------------------------------------------------------------- //
 	//  FALLBACK SQL GENERATOR (template-based, no AI model)
 	// ----------------------------------------------------------------------- //
