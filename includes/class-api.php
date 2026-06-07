@@ -85,7 +85,7 @@ class SILC_WIA_API {
 		$response = wp_remote_post(
 			$api_url . '/chat/completions',
 			array(
-				'timeout'   => 60,
+				'timeout'   => 600,
 				'headers'   => array(
 					'Authorization' => 'Bearer ' . $settings['api_key'],
 					'Content-Type'  => 'application/json',
@@ -254,7 +254,7 @@ class SILC_WIA_API {
 				) ),
 			)
 		);
-
+		
 		if ( is_wp_error( $response ) ) {
 			return array(
 				'success' => false,

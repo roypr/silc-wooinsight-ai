@@ -153,7 +153,7 @@ class SILC_WIA_Admin {
 			? esc_url_raw( untrailingslashit( trim( $input['api_url'] ) ) )
 			: SILC_WIA_API::DEFAULT_API_URL;
 
-		// Preserve existing key if the submitted key is empty (to avoid wiping it on save).
+		// Preserve existing key if the field was left empty (user wants to keep it).
 		if ( ! empty( $input['api_key'] ) ) {
 			$output['api_key'] = sanitize_text_field( $input['api_key'] );
 		} elseif ( isset( $current['api_key'] ) ) {
@@ -206,25 +206,25 @@ class SILC_WIA_Admin {
 	 */
 	public static function render_field_api_key(): void {
 		$settings = SILC_WIA_API::get_settings();
-		$value    = $settings['api_key'] ?? '';
-		$has_key  = ! empty( $value );
+		$has_key  = ! empty( $settings['api_key'] );
 		?>
 		<div>
 			<input type="password"
 				name="<?php echo esc_attr( self::SETTINGS_OPTION ); ?>[api_key]"
-				value="<?php echo $has_key ? '********' : ''; ?>"
+				value=""
 				class="regular-text"
-				placeholder="<?php echo $has_key ? '' : 'sk-...'; ?>"
+				placeholder="<?php echo $has_key ? esc_attr__( 'API key is saved — enter a new one to replace it', 'silc-wooinsight-ai' ) : 'sk-...'; ?>"
 				autocomplete="off"
 			/>
 			<?php if ( $has_key ) : ?>
+				<p class="description" style="color:#1a7a2e;">
+					&#10003; <?php esc_html_e( 'An API key is saved. Leave the field empty to keep it.', 'silc-wooinsight-ai' ); ?>
+				</p>
+			<?php else : ?>
 				<p class="description">
-					<em><?php esc_html_e( 'A key is currently saved. Leave blank to keep the existing key.', 'silc-wooinsight-ai' ); ?></em>
+					<?php esc_html_e( 'Your API key. Never shared — only sent to the API URL above.', 'silc-wooinsight-ai' ); ?>
 				</p>
 			<?php endif; ?>
-			<p class="description">
-				<?php esc_html_e( 'Your API key. Never shared — only sent to the API URL above.', 'silc-wooinsight-ai' ); ?>
-			</p>
 		</div>
 		<?php
 	}
