@@ -336,6 +336,16 @@
 .silc-wia-gap-2 { gap: 8px; }
 .silc-wia-items-center { align-items: center; }
 
+/* Settings page test button */
+#silc-wia-test-api {
+	margin-top: 4px;
+}
+
+#silc-wia-test-result {
+	font-size: 13px;
+	vertical-align: middle;
+}
+
 /* Footer */
 .silc-wia-footer {
 	margin-top: 24px;

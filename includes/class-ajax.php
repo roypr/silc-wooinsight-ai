@@ -38,6 +38,7 @@ class SILC_WIA_Ajax {
 		add_action( 'wp_ajax_silc_wia_get_history', array( __CLASS__, 'handle_get_history' ) );
 		add_action( 'wp_ajax_silc_wia_clear_history', array( __CLASS__, 'handle_clear_history' ) );
 		add_action( 'wp_ajax_silc_wia_validate_sql', array( __CLASS__, 'handle_validate_sql' ) );
+		add_action( 'wp_ajax_silc_wia_generate_sql', array( __CLASS__, 'handle_generate_sql' ) );
 	}
 
 	/**
@@ -243,5 +244,41 @@ class SILC_WIA_Ajax {
 			'sql'   => $validation['sql'],
 			'error' => $validation['error'],
 		) );
+	}
+
+	/**
+	 * Handle: Generate SQL from natural language using the configured API.
+	 */
+	public static function handle_generate_sql(): void {
+		if ( ! self::verify() ) {
+			return;
+		}
+
+		$question = isset( $_POST['question'] ) ? sanitize_text_field( wp_unslash( $_POST['question'] ) ) : '';
+		$question = trim( $question );
+
+		if ( empty( $question ) ) {
+			wp_send_json_error( array( 'message' => __( 'No question provided.', 'silc-wooinsight-ai' ) ) );
+			return;
+		}
+
+		// Get schema context.
+		$schema_context = SILC_WIA_Woo_Schema::get_schema_context();
+
+		// Call the API.
+		require_once SILC_WIA_PATH . 'includes/class-api.php';
+		$result = SILC_WIA_API::generate_sql( $question, $schema_context );
+
+		if ( $result['success'] ) {
+			wp_send_json_success( array(
+				'sql'      => $result['sql'],
+				'question' => $question,
+			) );
+		} else {
+			wp_send_json_error( array(
+				'message'  => $result['error'],
+				'question' => $question,
+			) );
+		}
 	}
 }

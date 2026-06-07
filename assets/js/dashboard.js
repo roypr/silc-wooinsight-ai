@@ -2,8 +2,8 @@
  * SILC WooInsight AI - React Dashboard
  *
  * Uses @wordpress/element (React) and @wordpress/components for the UI.
- * Runs the AI model in a Web Worker (assets/js/worker.js) to keep the
- * main thread responsive, with progress bars and visual status signals.
+ * Generates SQL via an OpenAI-compatible API endpoint (server-side).
+ * Falls back to template-based generation when the API is unavailable.
  *
  * @package SILC_WooInsight_AI
  */
@@ -26,19 +26,11 @@
 	var TextareaControl = wp.components.TextareaControl;
 	var Button = wp.components.Button;
 	var Spinner = wp.components.Spinner;
-	var SnackbarList = wp.components.SnackbarList;
 	var Panel = wp.components.Panel;
 	var PanelBody = wp.components.PanelBody;
-	var PanelRow = wp.components.PanelRow;
 	var TabPanel = wp.components.TabPanel;
 	var Notice = wp.components.Notice;
-	var Card = wp.components.Card;
-	var CardHeader = wp.components.CardHeader;
-	var CardBody = wp.components.CardBody;
-	var Icon = wp.components.Icon;
-	var Dashicon = wp.components.Dashicon;
-	var Modal = wp.components.Modal;
-	var DropdownMenu = wp.components.DropdownMenu;
+	var ExternalLink = wp.components.ExternalLink;
 
 	// ----------------------------------------------------------------------- //
 	//  DATA
@@ -48,6 +40,8 @@
 	var ajaxUrl = data.ajaxUrl || '';
 	var nonce = data.nonce || '';
 	var l10n = data.l10n || {};
+	var settingsUrl = data.settingsUrl || '';
+	var apiConfigured = data.apiConfigured || false;
 
 	/**
 	 * Helper to make AJAX requests to our plugin.
@@ -102,36 +96,12 @@
 		var history = _useState7[0];
 		var setHistory = _useState7[1];
 
-		var _useState8 = useState('idle');
-		var modelStatus = _useState8[0];
-		var setModelStatus = _useState8[1];
-
-		var _useState9 = useState('');
-		var schemaContext = _useState9[0];
-		var setSchemaContext = _useState9[1];
-
-		// Progress tracking for model download.
-		var _useState10 = useState(null);
-		var modelProgress = _useState10[0];
-		var setModelProgress = _useState10[1];
-
-		// Whether the worker is currently running inference.
-		var _useState11 = useState(false);
-		var isInferring = _useState11[0];
-		var setIsInferring = _useState11[1];
-
-		// Refs for values accessed inside the worker message handler (avoids stale closures).
-		var workerRef = useRef(null);
-		var questionRef = useRef('');
-		var schemaRef = useRef('');
-		var schemaLoadedRef = useRef(false);
-
-		// Keep refs in sync with state (updated every render).
-		questionRef.current = question;
-		schemaRef.current = schemaContext;
+		var _useState8 = useState('');
+		var schemaContext = _useState8[0];
+		var setSchemaContext = _useState8[1];
 
 		// ------------------------------------------------------------------- //
-		//  EFFECT: Bootstrap schema, history, and Web Worker.
+		//  EFFECT: Bootstrap schema and history.
 		// ------------------------------------------------------------------- //
 
 		useEffect(function () {
@@ -139,8 +109,6 @@
 			doAction('get_schema').then(function (resp) {
 				if (resp.success && resp.data) {
 					setSchemaContext(resp.data.context || '');
-					schemaRef.current = resp.data.context || '';
-					schemaLoadedRef.current = true;
 				}
 			}).catch(function () {
 				// Silently fail - manual SQL entry still works.
@@ -152,74 +120,6 @@
 					setHistory(resp.data.history || []);
 				}
 			}).catch(function () { });
-
-			// ----------------------------------------------------------------- //
-			//  Web Worker initialisation.
-			// ----------------------------------------------------------------- //
-
-			setModelStatus('loading');
-			setModelProgress({ percent: 0, text: 'Starting model download...' });
-
-			var worker = new Worker(data.pluginUrl + 'assets/js/worker.js');
-			workerRef.current = worker;
-
-			worker.onmessage = function (event) {
-				var message = event.data;
-
-				if (message.status === 'init') {
-					// Progress update during model loading.
-					var pd = message.data || {};
-					var pct = Math.round((pd.progress || 0) * 100);
-					setModelProgress({
-						percent: pct,
-						text: pd.text || 'Loading model... ' + pct + '%',
-					});
-					setModelStatus('loading');
-				} else if (message.status === 'ready') {
-					// Model fully loaded – switch to interactive state.
-					setModelStatus('ready');
-					setModelProgress(null);
-				} else if (message.status === 'inference') {
-					// Worker is now running inference.
-					setIsInferring(true);
-				} else if (message.status === 'result') {
-					// SQL result received from the worker.
-					setIsInferring(false);
-					var sql = message.output || '';
-					var currentQuestion = questionRef.current;
-					if (!sql || !sql.toUpperCase().startsWith('SELECT')) {
-						sql = fallbackGenerateSQL(currentQuestion);
-					}
-					setSqlInput(sql);
-					setLoading(false);
-				} else if (message.status === 'error') {
-					// Model failed — silently fall back to template.
-					console.warn('SILC WooInsight AI: Worker error -', message.error);
-					setModelStatus('error');
-					setModelProgress(null);
-					setIsInferring(false);
-					setLoading(false);
-				}
-			};
-
-			worker.onerror = function (err) {
-				console.warn('SILC WooInsight AI: Worker error -', err.message);
-				setModelStatus('error');
-				setModelProgress(null);
-				setIsInferring(false);
-				setLoading(false);
-			};
-
-			// Kick off model loading in the worker.
-			worker.postMessage({ type: 'init' });
-
-			// Teardown: terminate the worker when the component unmounts.
-			return function () {
-				if (workerRef.current) {
-					workerRef.current.terminate();
-					workerRef.current = null;
-				}
-			};
 		}, []);
 
 		// ------------------------------------------------------------------- //
@@ -227,8 +127,7 @@
 		// ------------------------------------------------------------------- //
 
 		/**
-		 * Generate SQL from natural language using the AI model via Web Worker.
-		 * Falls back to template-based generation if the model isn't ready.
+		 * Generate SQL from natural language using the API (or fallback).
 		 */
 		var handleGenerateSQL = useCallback(function () {
 			if (!question.trim()) {
@@ -239,25 +138,38 @@
 			setLoading(true);
 			setError(null);
 
-			var worker = workerRef.current;
-
-			if (worker && modelStatus === 'ready') {
-				// Use the worker for AI inference.
-				worker.postMessage({
-					type: 'generateSQL',
-					question: question,
-					schemaContext: schemaContext,
-				});
+			if (apiConfigured) {
+				// Use the API.
+				doAction('generate_sql', { question: question })
+					.then(function (resp) {
+						setLoading(false);
+						if (resp.success && resp.data && resp.data.sql) {
+							setSqlInput(resp.data.sql);
+						} else {
+							// API returned an error — try fallback.
+							var msg = resp.data && resp.data.message ? resp.data.message : 'Failed to generate SQL';
+							setError(msg);
+							// Still try fallback as a courtesy.
+							var sql = fallbackGenerateSQL(question);
+							if (sql) {
+								setSqlInput(sql);
+								setError(null);
+							}
+						}
+					})
+					.catch(function () {
+						setLoading(false);
+						setError('Network error. Please try again.');
+					});
 			} else {
-				// Model not loaded – use fallback after a brief delay so the UI
-				// still shows the spinner to give feedback.
+				// No API configured — use fallback immediately.
 				setTimeout(function () {
 					var sql = fallbackGenerateSQL(question);
 					setSqlInput(sql);
 					setLoading(false);
-				}, 300);
+				}, 200);
 			}
-		}, [question, schemaContext, modelStatus]);
+		}, [question, apiConfigured]);
 
 		/**
 		 * Execute the SQL query.
@@ -329,48 +241,30 @@
 		// ------------------------------------------------------------------- //
 
 		/**
-		 * Render the model status indicator with progress bar when loading.
+		 * Render the API status indicator.
 		 */
-		function renderModelStatus() {
-			var statusMap = {
-				'idle':    { text: 'AI: Idle', className: 'loading' },
-				'loading': { text: 'AI: Loading model...', className: 'loading' },
-				'ready':   { text: 'AI: Ready', className: 'ready' },
-				'error':   { text: 'AI: Unavailable (using fallback)', className: 'error' },
-			};
-
-			var info = statusMap[modelStatus] || statusMap.idle;
-
-			// Status badge.
-			var badge = el('span', {
-				className: 'silc-wia-model-status ' + info.className,
-			}, info.text);
-
-			// Progress bar shown only during model download.
-			var progressBar = null;
-			if (modelStatus === 'loading' && modelProgress) {
-				var pct = modelProgress.percent || 0;
-				var barFill = el('div', {
-					className: 'silc-wia-progress-bar-fill',
-					style: { width: pct + '%' },
-				});
-				var barText = el('span', { className: 'silc-wia-progress-text' }, pct + '%');
-				progressBar = el('div', { className: 'silc-wia-progress-bar-wrap' },
-					barFill,
-					barText
-				);
+		function renderApiStatus() {
+			var badge;
+			if (apiConfigured) {
+				badge = el('span', {
+					className: 'silc-wia-model-status ready',
+				}, l10n.apiReady || 'AI Ready (API)');
+			} else {
+				badge = el('span', {
+					className: 'silc-wia-model-status error',
+				}, l10n.usingFallback || 'Using built-in templates (API not configured)');
 			}
 
-			// Animated pulse while inferring.
-			var inferenceHint = null;
-			if (isInferring) {
-				inferenceHint = el('span', { className: 'silc-wia-inference-pulse' }, 'Generating SQL...');
-			}
+			var settingsLink = el(Button, {
+				isSmall: true,
+				variant: 'link',
+				href: settingsUrl,
+				style: { marginLeft: '8px' },
+			}, l10n.settings || 'Settings');
 
 			return el('div', { className: 'silc-wia-status-group' },
 				badge,
-				progressBar,
-				inferenceHint
+				settingsLink
 			);
 		}
 
@@ -444,9 +338,9 @@
 				onRemove: function () { setError(null); },
 			}, error) : null,
 
-			// Top row: model status + progress bar.
+			// Top row: API status indicator.
 			el('div', { className: 'silc-wia-flex silc-wia-items-center silc-wia-gap-2 silc-wia-mb-3' },
-				renderModelStatus()
+				renderApiStatus()
 			),
 
 			// Main content grid.
@@ -475,7 +369,7 @@
 									isPrimary: true,
 									onClick: handleGenerateSQL,
 									disabled: isLoading || !question.trim(),
-								}, isLoading ? el(Spinner, {}) : (isInferring ? 'Generating SQL...' : (l10n.generateSQL || 'Generate SQL')))
+								}, isLoading ? el(Spinner, {}) : (l10n.generateSQL || 'Generate SQL'))
 							),
 							el('div', { className: 'silc-wia-sql-field' },
 								el(TextareaControl, {
@@ -567,24 +461,20 @@
 				' — ',
 				'SQL queries are validated server-side. Only SELECT queries against WooCommerce tables are allowed.',
 				el('br'),
-				'AI model: ',
-				el('a', {
-					href: 'https://huggingface.co/onnx-community/Qwen2.5-Coder-0.5B-Instruct',
-					target: '_blank',
-					rel: 'noopener noreferrer',
-				}, 'Qwen2.5-Coder-0.5B-Instruct'),
-				' via ',
-				el('a', {
-					href: 'https://huggingface.co/docs/transformers.js/en/index',
-					target: '_blank',
-					rel: 'noopener noreferrer',
-				}, 'Transformers.js')
+				'AI via ',
+				el(ExternalLink, {
+					href: 'https://platform.openai.com/docs/overview',
+				}, 'OpenAI-compatible API'),
+				'. ',
+				el(ExternalLink, {
+					href: settingsUrl,
+				}, 'Configure API settings')
 			)
 		);
 	}
 
 	// ----------------------------------------------------------------------- //
-	//  FALLBACK SQL GENERATOR (template-based, no AI model)
+	//  FALLBACK SQL GENERATOR (template-based, no API needed)
 	// ----------------------------------------------------------------------- //
 
 	function fallbackGenerateSQL(question) {
@@ -650,7 +540,7 @@
 			return 'SELECT t.name AS category, COUNT(tr.object_id) AS products_sold\nFROM ' + prefix + 'term_taxonomy AS tt\nINNER JOIN ' + prefix + 'terms AS t ON tt.term_id = t.term_id\nINNER JOIN ' + prefix + 'term_relationships AS tr ON tt.term_taxonomy_id = tr.term_taxonomy_id\nINNER JOIN ' + prefix + 'posts AS p ON tr.object_id = p.ID\nINNER JOIN ' + prefix + 'wc_product_meta_lookup AS l ON p.ID = l.product_id\nWHERE tt.taxonomy = \'product_cat\' AND p.post_type = \'product\' AND p.post_status = \'publish\'\nGROUP BY t.term_id\nORDER BY SUM(l.total_sales) DESC\nLIMIT 10;';
 		}
 
-		// Default: generic query using wc_order_stats.
+		// Order stats / analytics.
 		if (/order\s+stats/i.test(q) || /analytics/i.test(q)) {
 			return 'SELECT *\nFROM ' + prefix + 'wc_order_stats\nORDER BY date_created_gmt DESC\nLIMIT 20;';
 		}
