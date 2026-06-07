@@ -224,6 +224,85 @@
 	color: #b32d2e;
 }
 
+/* Status group: badge + progress bar + inference hint laid out horizontally */
+.silc-wia-status-group {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+}
+
+/* Progress bar container */
+.silc-wia-progress-bar-wrap {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	width: 160px;
+	height: 18px;
+	background: #f0f0f1;
+	border-radius: 9px;
+	overflow: hidden;
+	position: relative;
+}
+
+/* Progress bar fill – animated */
+.silc-wia-progress-bar-fill {
+	height: 100%;
+	background: linear-gradient(90deg, #2271b1, #72aee6);
+	border-radius: 9px;
+	transition: width 0.3s ease;
+	min-width: 4px;
+}
+
+/* Percentage text inside the progress bar */
+.silc-wia-progress-text {
+	position: absolute;
+	right: 8px;
+	top: 50%;
+	transform: translateY(-50%);
+	font-size: 10px;
+	font-weight: 600;
+	color: #50575e;
+	line-height: 1;
+}
+
+/* Animated pulse shown while the model is running inference */
+.silc-wia-inference-pulse {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	font-weight: 500;
+	color: #2271b1;
+	animation: silc-wia-pulse 1.4s ease-in-out infinite;
+}
+
+.silc-wia-inference-pulse::before {
+	content: '';
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #2271b1;
+	animation: silc-wia-pulse-dot 1.4s ease-in-out infinite;
+}
+
+@keyframes silc-wia-pulse {
+	0%, 100% { opacity: 0.6; }
+	50% { opacity: 1; }
+}
+
+@keyframes silc-wia-pulse-dot {
+	0%, 100% {
+		transform: scale(0.8);
+		opacity: 0.6;
+	}
+	50% {
+		transform: scale(1.2);
+		opacity: 1;
+	}
+}
+
 /* JSON display */
 .silc-wia-json-display {
 	background: #1d2327;

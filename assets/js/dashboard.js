@@ -2,7 +2,8 @@
  * SILC WooInsight AI - React Dashboard
  *
  * Uses @wordpress/element (React) and @wordpress/components for the UI.
- * Integrates Transformer.js for browser-side AI model inference.
+ * Runs the AI model in a Web Worker (assets/js/worker.js) to keep the
+ * main thread responsive, with progress bars and visual status signals.
  *
  * @package SILC_WooInsight_AI
  */
@@ -69,90 +70,6 @@
 	}
 
 	// ----------------------------------------------------------------------- //
-	//  TRANSFORMER.JS LOADER
-	// ----------------------------------------------------------------------- //
-
-	/**
-	 * Load Transformer.js from CDN and attempt to initialize the model.
-	 */
-	function createModelLoader() {
-		var modelLoaded = false;
-		var modelError = null;
-		var pipeline = null;
-		var loading = false;
-
-		return {
-			getStatus: function () {
-				if (loading) return 'loading';
-				if (modelLoaded) return 'ready';
-				if (modelError) return 'error';
-				return 'idle';
-			},
-			getError: function () { return modelError; },
-			isReady: function () { return modelLoaded; },
-			getPipeline: function () { return pipeline; },
-
-			load: function () {
-				if (loading || modelLoaded) return;
-				loading = true;
-
-				var self = this;
-
-				// Step 1: Dynamically import @huggingface/transformers as an ES module.
-				import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0')
-					.then(function (module) {
-						var pipelineFn = module.pipeline;
-
-						// Step 2: Create a text-generation pipeline using the ONNX model.
-						var modelId = 'onnx-community/Qwen2.5-Coder-0.5B-Instruct';
-
-						return pipelineFn('text-generation', modelId, {
-							quantized: true,
-							device: 'wasm',
-						});
-					})
-					.then(function (pipe) {
-						pipeline = pipe;
-						modelLoaded = true;
-						loading = false;
-						console.log('SILC WooInsight AI: Model loaded successfully.');
-					})
-					.catch(function (err) {
-						modelError = err.message || 'Unknown error loading model.';
-						loading = false;
-						console.warn('SILC WooInsight AI: Model load failed -', modelError);
-					});
-			},
-
-			/**
-			 * Generate SQL from a user question using the loaded model.
-			 * Falls back to a simple template-based approach if model isn't available.
-			 */
-			generateSQL: function (question, schemaContext) {
-				if (!modelLoaded || !pipeline) {
-					return Promise.reject(new Error('Model not loaded.'));
-				}
-
-				var prompt = schemaContext + '\n\nUSER QUESTION: ' + question + '\n\nGenerate ONLY the SQL query:';
-
-				return pipeline(prompt, {
-					max_new_tokens: 300,
-					temperature: 0.2,
-					do_sample: false,
-				}).then(function (result) {
-					var text = result[0].generated_text || '';
-					// Extract just the SQL part (after the prompt).
-					var sql = text.substring(text.indexOf('SELECT'));
-					sql = sql.split('\n')[0]; // First line only.
-					// Clean up.
-					sql = sql.replace(/```sql|```/gi, '').trim();
-					return sql;
-				});
-			},
-		};
-	}
-
-	// ----------------------------------------------------------------------- //
 	//  MAIN DASHBOARD COMPONENT
 	// ----------------------------------------------------------------------- //
 
@@ -193,15 +110,36 @@
 		var schemaContext = _useState9[0];
 		var setSchemaContext = _useState9[1];
 
-		var modelLoaderRef = useRef(null);
+		// Progress tracking for model download.
+		var _useState10 = useState(null);
+		var modelProgress = _useState10[0];
+		var setModelProgress = _useState10[1];
+
+		// Whether the worker is currently running inference.
+		var _useState11 = useState(false);
+		var isInferring = _useState11[0];
+		var setIsInferring = _useState11[1];
+
+		// Refs for values accessed inside the worker message handler (avoids stale closures).
+		var workerRef = useRef(null);
+		var questionRef = useRef('');
+		var schemaRef = useRef('');
 		var schemaLoadedRef = useRef(false);
 
-		// Initialize: load schema and model.
+		// Keep refs in sync with state (updated every render).
+		questionRef.current = question;
+		schemaRef.current = schemaContext;
+
+		// ------------------------------------------------------------------- //
+		//  EFFECT: Bootstrap schema, history, and Web Worker.
+		// ------------------------------------------------------------------- //
+
 		useEffect(function () {
 			// Load schema context from server.
 			doAction('get_schema').then(function (resp) {
 				if (resp.success && resp.data) {
 					setSchemaContext(resp.data.context || '');
+					schemaRef.current = resp.data.context || '';
 					schemaLoadedRef.current = true;
 				}
 			}).catch(function () {
@@ -215,27 +153,82 @@
 				}
 			}).catch(function () { });
 
-			// Initialize model loader.
-			var loader = createModelLoader();
-			modelLoaderRef.current = loader;
+			// ----------------------------------------------------------------- //
+			//  Web Worker initialisation.
+			// ----------------------------------------------------------------- //
 
-			// Attempt to load the model (async, non-blocking).
-			loader.load();
+			setModelStatus('loading');
+			setModelProgress({ percent: 0, text: 'Starting model download...' });
 
-			// Poll model status.
-			var interval = setInterval(function () {
-				var status = loader.getStatus();
-				setModelStatus(status);
-				if (status === 'ready' || status === 'error') {
-					clearInterval(interval);
+			var worker = new Worker(data.pluginUrl + 'assets/js/worker.js');
+			workerRef.current = worker;
+
+			worker.onmessage = function (event) {
+				var message = event.data;
+
+				if (message.status === 'init') {
+					// Progress update during model loading.
+					var pd = message.data || {};
+					var pct = Math.round((pd.progress || 0) * 100);
+					setModelProgress({
+						percent: pct,
+						text: pd.text || 'Loading model... ' + pct + '%',
+					});
+					setModelStatus('loading');
+				} else if (message.status === 'ready') {
+					// Model fully loaded – switch to interactive state.
+					setModelStatus('ready');
+					setModelProgress(null);
+				} else if (message.status === 'inference') {
+					// Worker is now running inference.
+					setIsInferring(true);
+				} else if (message.status === 'result') {
+					// SQL result received from the worker.
+					setIsInferring(false);
+					var sql = message.output || '';
+					var currentQuestion = questionRef.current;
+					if (!sql || !sql.toUpperCase().startsWith('SELECT')) {
+						sql = fallbackGenerateSQL(currentQuestion);
+					}
+					setSqlInput(sql);
+					setLoading(false);
+				} else if (message.status === 'error') {
+					// Model failed — silently fall back to template.
+					console.warn('SILC WooInsight AI: Worker error -', message.error);
+					setModelStatus('error');
+					setModelProgress(null);
+					setIsInferring(false);
+					setLoading(false);
 				}
-			}, 500);
+			};
 
-			return function () { clearInterval(interval); };
+			worker.onerror = function (err) {
+				console.warn('SILC WooInsight AI: Worker error -', err.message);
+				setModelStatus('error');
+				setModelProgress(null);
+				setIsInferring(false);
+				setLoading(false);
+			};
+
+			// Kick off model loading in the worker.
+			worker.postMessage({ type: 'init' });
+
+			// Teardown: terminate the worker when the component unmounts.
+			return function () {
+				if (workerRef.current) {
+					workerRef.current.terminate();
+					workerRef.current = null;
+				}
+			};
 		}, []);
 
+		// ------------------------------------------------------------------- //
+		//  HANDLERS
+		// ------------------------------------------------------------------- //
+
 		/**
-		 * Generate SQL from natural language using the AI model (or fallback).
+		 * Generate SQL from natural language using the AI model via Web Worker.
+		 * Falls back to template-based generation if the model isn't ready.
 		 */
 		var handleGenerateSQL = useCallback(function () {
 			if (!question.trim()) {
@@ -246,34 +239,25 @@
 			setLoading(true);
 			setError(null);
 
-			var loader = modelLoaderRef.current;
+			var worker = workerRef.current;
 
-			if (loader && loader.isReady()) {
-				// Use the model.
-				loader.generateSQL(question, schemaContext)
-					.then(function (sql) {
-						if (!sql || !sql.toUpperCase().startsWith('SELECT')) {
-							// Model didn't produce valid SQL, use fallback.
-							sql = fallbackGenerateSQL(question);
-						}
-						setSqlInput(sql);
-						setLoading(false);
-					})
-					.catch(function () {
-						// Fallback to template-based generation.
-						var sql = fallbackGenerateSQL(question);
-						setSqlInput(sql);
-						setLoading(false);
-					});
+			if (worker && modelStatus === 'ready') {
+				// Use the worker for AI inference.
+				worker.postMessage({
+					type: 'generateSQL',
+					question: question,
+					schemaContext: schemaContext,
+				});
 			} else {
-				// Model not loaded - use fallback.
+				// Model not loaded – use fallback after a brief delay so the UI
+				// still shows the spinner to give feedback.
 				setTimeout(function () {
 					var sql = fallbackGenerateSQL(question);
 					setSqlInput(sql);
 					setLoading(false);
 				}, 300);
 			}
-		}, [question, schemaContext]);
+		}, [question, schemaContext, modelStatus]);
 
 		/**
 		 * Execute the SQL query.
@@ -340,6 +324,56 @@
 			}).catch(function () { });
 		}, []);
 
+		// ------------------------------------------------------------------- //
+		//  RENDER HELPERS
+		// ------------------------------------------------------------------- //
+
+		/**
+		 * Render the model status indicator with progress bar when loading.
+		 */
+		function renderModelStatus() {
+			var statusMap = {
+				'idle':    { text: 'AI: Idle', className: 'loading' },
+				'loading': { text: 'AI: Loading model...', className: 'loading' },
+				'ready':   { text: 'AI: Ready', className: 'ready' },
+				'error':   { text: 'AI: Unavailable (using fallback)', className: 'error' },
+			};
+
+			var info = statusMap[modelStatus] || statusMap.idle;
+
+			// Status badge.
+			var badge = el('span', {
+				className: 'silc-wia-model-status ' + info.className,
+			}, info.text);
+
+			// Progress bar shown only during model download.
+			var progressBar = null;
+			if (modelStatus === 'loading' && modelProgress) {
+				var pct = modelProgress.percent || 0;
+				var barFill = el('div', {
+					className: 'silc-wia-progress-bar-fill',
+					style: { width: pct + '%' },
+				});
+				var barText = el('span', { className: 'silc-wia-progress-text' }, pct + '%');
+				progressBar = el('div', { className: 'silc-wia-progress-bar-wrap' },
+					barFill,
+					barText
+				);
+			}
+
+			// Animated pulse while inferring.
+			var inferenceHint = null;
+			if (isInferring) {
+				inferenceHint = el('span', { className: 'silc-wia-inference-pulse' }, 'Generating SQL...');
+			}
+
+			return el('div', { className: 'silc-wia-status-group' },
+				badge,
+				progressBar,
+				inferenceHint
+			);
+		}
+
 		/**
 		 * Render the results table or JSON.
 		 */
@@ -397,20 +431,9 @@
 			});
 		}
 
-		/**
-		 * Render the model status indicator.
-		 */
-		function renderModelStatus() {
-			var statusMap = {
-				'idle': { text: 'AI: Idle', className: 'loading' },
-				'loading': { text: 'AI: Loading model...', className: 'loading' },
-				'ready': { text: 'AI: Ready', className: 'ready' },
-				'error': { text: 'AI: Unavailable (using fallback)', className: 'error' },
-			};
-
-			var info = statusMap[modelStatus] || statusMap.idle;
-			return el('span', { className: 'silc-wia-model-status ' + info.className }, info.text);
-		}
+		// ------------------------------------------------------------------- //
+		//  MAIN RENDER
+		// ------------------------------------------------------------------- //
 
 		return el('div', { className: 'silc-wia-dashboard' },
 
@@ -421,7 +444,7 @@
 				onRemove: function () { setError(null); },
 			}, error) : null,
 
-			// Top row: model status + info.
+			// Top row: model status + progress bar.
 			el('div', { className: 'silc-wia-flex silc-wia-items-center silc-wia-gap-2 silc-wia-mb-3' },
 				renderModelStatus()
 			),
@@ -452,7 +475,7 @@
 									isPrimary: true,
 									onClick: handleGenerateSQL,
 									disabled: isLoading || !question.trim(),
-								}, isLoading ? el(Spinner, {}) : (l10n.generateSQL || 'Generate SQL'))
+								}, isLoading ? el(Spinner, {}) : (isInferring ? 'Generating SQL...' : (l10n.generateSQL || 'Generate SQL')))
 							),
 							el('div', { className: 'silc-wia-sql-field' },
 								el(TextareaControl, {
