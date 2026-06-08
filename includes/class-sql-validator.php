@@ -84,10 +84,18 @@ class SILC_WIA_SQL_Validator {
 			$result['error'] = __( 'Only SELECT queries are allowed.', 'silc-wooinsight-ai' );
 			return $result;
 		}
-
 		// 2. Block forbidden keywords.
 		foreach ( self::FORBIDDEN_KEYWORDS as $keyword ) {
-			if ( false !== strpos( $upper, $keyword ) ) {
+			// Use word-boundary matching for SQL keywords to avoid false
+			// positives with column/table names (e.g., date_created vs CREATE).
+			// Comment/function-call patterns (--, #, CHAR(, etc.) use strpos.
+			$found = false;
+			if ( preg_match( '/^\w/', $keyword ) && preg_match( '/\w$/', $keyword ) ) {
+				$found = (bool) preg_match( '/\b' . preg_quote( $keyword, '/' ) . '\b/', $upper );
+			} else {
+				$found = ( false !== strpos( $upper, $keyword ) );
+			}
+			if ( $found ) {
 				$result['error'] = sprintf(
 					/* translators: %s: forbidden keyword */
 					__( 'Query contains forbidden keyword: %s', 'silc-wooinsight-ai' ),
@@ -96,7 +104,6 @@ class SILC_WIA_SQL_Validator {
 				return $result;
 			}
 		}
-
 		// 3. Normalize: strip trailing semicolons first (they are not multi-statement).
 		$sql = rtrim( $sql, "; \t\n\r\0\x0B" );
 
