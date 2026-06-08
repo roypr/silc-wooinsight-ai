@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Plugin constants.
-define( 'SILC_WIA_VERSION', '1.0.0' );
+define( 'SILC_WIA_VERSION', '2.0.0' );
 define( 'SILC_WIA_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SILC_WIA_URL', plugin_dir_url( __FILE__ ) );
 define( 'SILC_WIA_BASENAME', plugin_basename( __FILE__ ) );
@@ -44,6 +44,8 @@ add_action( 'plugins_loaded', function () {
 	require_once SILC_WIA_PATH . 'includes/class-api.php';
 	require_once SILC_WIA_PATH . 'includes/class-admin.php';
 	require_once SILC_WIA_PATH . 'includes/class-ajax.php';
+	require_once SILC_WIA_PATH . 'includes/class-insight-renderer.php';
+	require_once SILC_WIA_PATH . 'includes/class-insights.php';
 
 	// Initialize.
 	SILC_WIA_Admin::init();
@@ -70,6 +72,8 @@ register_activation_hook( __FILE__, function () {
  */
 register_deactivation_hook( __FILE__, function () {
 	delete_option( 'silc_wia_query_history' );
+	delete_option( 'silc_wia_insight_history' );
+	delete_option( 'silc_wia_insight_cache' );
 } );
 
 /**

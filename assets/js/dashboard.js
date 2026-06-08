@@ -2,11 +2,17 @@
  * SILC WooInsight AI - React Dashboard
  *
  * Uses @wordpress/element (React) and @wordpress/components for the UI.
- * Generates SQL via an OpenAI-compatible API endpoint (server-side).
- * Falls back to template-based generation when the API is unavailable.
+ * Supports two modes:
+ *   - SQL Mode: Generate SQL → edit → execute (v1.0)
+ *   - Insight Mode: Question → AI → SQL → Execute → Render (v2.0)
+ *
+ * Insight mode renders charts via Chart.js (SILC_WIA_Charts global),
+ * rich lists with HPOS-aware admin links, and formatted answer text.
  *
  * @package SILC_WooInsight_AI
  */
+
+/* global SILC_WIA_Charts */
 
 (function (wp) {
 	'use strict';
@@ -31,6 +37,11 @@
 	var TabPanel = wp.components.TabPanel;
 	var Notice = wp.components.Notice;
 	var ExternalLink = wp.components.ExternalLink;
+	var Card = wp.components.Card;
+	var CardHeader = wp.components.CardHeader;
+	var CardBody = wp.components.CardBody;
+	var Flex = wp.components.Flex;
+	var FlexItem = wp.components.FlexItem;
 
 	// ----------------------------------------------------------------------- //
 	//  DATA
@@ -68,67 +79,111 @@
 	// ----------------------------------------------------------------------- //
 
 	function WooInsightDashboard() {
-		var _useState = useState('');
-		var question = _useState[0];
-		var setQuestion = _useState[1];
+		// Mode: 'sql' or 'insight'
+		var _mode = useState('sql');
+		var mode = _mode[0];
+		var setMode = _mode[1];
 
-		var _useState2 = useState('');
-		var sqlInput = _useState2[0];
-		var setSqlInput = _useState2[1];
+		// Shared question input.
+		var _q = useState('');
+		var question = _q[0];
+		var setQuestion = _q[1];
 
-		var _useState3 = useState(null);
-		var results = _useState3[0];
-		var setResults = _useState3[1];
+		// SQL mode state.
+		var _sqlInput = useState('');
+		var sqlInput = _sqlInput[0];
+		var setSqlInput = _sqlInput[1];
 
-		var _useState4 = useState(false);
-		var isLoading = _useState4[0];
-		var setLoading = _useState4[1];
+		var _results = useState(null);
+		var sqlResults = _results[0];
+		var setSqlResults = _results[1];
 
-		var _useState5 = useState(null);
-		var queryInfo = _useState5[0];
-		var setQueryInfo = _useState5[1];
+		var _loading = useState(false);
+		var isLoading = _loading[0];
+		var setLoading = _loading[1];
 
-		var _useState6 = useState(null);
-		var error = _useState6[0];
-		var setError = _useState6[1];
+		var _queryInfo = useState(null);
+		var queryInfo = _queryInfo[0];
+		var setQueryInfo = _queryInfo[1];
 
-		var _useState7 = useState([]);
-		var history = _useState7[0];
-		var setHistory = _useState7[1];
+		var _error = useState(null);
+		var error = _error[0];
+		var setError = _error[1];
 
-		var _useState8 = useState('');
-		var schemaContext = _useState8[0];
-		var setSchemaContext = _useState8[1];
+		var _history = useState([]);
+		var history = _history[0];
+		var setHistory = _history[1];
+
+		var _schema = useState('');
+		var schemaContext = _schema[0];
+		var setSchemaContext = _schema[1];
+
+		// Insight mode state.
+		var _insightData = useState(null);
+		var insightData = _insightData[0];
+		var setInsightData = _insightData[1];
+
+		var _insightHistory = useState([]);
+		var insightHistory = _insightHistory[0];
+		var setInsightHistory = _insightHistory[1];
+
+		var chartContainerRef = useRef(null);
 
 		// ------------------------------------------------------------------- //
 		//  EFFECT: Bootstrap schema and history.
 		// ------------------------------------------------------------------- //
 
 		useEffect(function () {
-			// Load schema context from server.
 			doAction('get_schema').then(function (resp) {
 				if (resp.success && resp.data) {
 					setSchemaContext(resp.data.context || '');
 				}
-			}).catch(function () {
-				// Silently fail - manual SQL entry still works.
-			});
+			}).catch(function () {});
 
-			// Load query history.
 			doAction('get_history').then(function (resp) {
 				if (resp.success && resp.data) {
 					setHistory(resp.data.history || []);
 				}
-			}).catch(function () { });
+			}).catch(function () {});
+
+			doAction('get_insight_history').then(function (resp) {
+				if (resp.success && resp.data) {
+					setInsightHistory(resp.data.history || []);
+				}
+			}).catch(function () {});
 		}, []);
 
+		// Chart cleanup on unmount or when insight data changes.
+		useEffect(function () {
+			return function () {
+				if (typeof SILC_WIA_Charts !== 'undefined') {
+					SILC_WIA_Charts.destroyAll();
+				}
+			};
+		}, []);
+
+		// Render chart when insight data changes.
+		useEffect(function () {
+			if (mode === 'insight' && insightData && insightData.type === 'chart' && insightData.chart_config) {
+				// Small delay to ensure DOM is ready.
+				var timer = setTimeout(function () {
+					if (typeof SILC_WIA_Charts !== 'undefined') {
+						SILC_WIA_Charts.renderChart('insight-chart-canvas', insightData.chart_config);
+					}
+				}, 50);
+				return function () {
+					clearTimeout(timer);
+					if (typeof SILC_WIA_Charts !== 'undefined') {
+						SILC_WIA_Charts.destroyChart('insight-chart-canvas');
+					}
+				};
+			}
+		}, [insightData, mode]);
+
 		// ------------------------------------------------------------------- //
-		//  HANDLERS
+		//  HANDLERS — SQL Mode
 		// ------------------------------------------------------------------- //
 
-		/**
-		 * Generate SQL from natural language using the API (or fallback).
-		 */
 		var handleGenerateSQL = useCallback(function () {
 			if (!question.trim()) {
 				setError(l10n.enterQuestion || 'Please enter a question.');
@@ -139,17 +194,14 @@
 			setError(null);
 
 			if (apiConfigured) {
-				// Use the API.
 				doAction('generate_sql', { question: question })
 					.then(function (resp) {
 						setLoading(false);
 						if (resp.success && resp.data && resp.data.sql) {
 							setSqlInput(resp.data.sql);
 						} else {
-							// API returned an error — try fallback.
 							var msg = resp.data && resp.data.message ? resp.data.message : 'Failed to generate SQL';
 							setError(msg);
-							// Still try fallback as a courtesy.
 							var sql = fallbackGenerateSQL(question);
 							if (sql) {
 								setSqlInput(sql);
@@ -162,7 +214,6 @@
 						setError('Network error. Please try again.');
 					});
 			} else {
-				// No API configured — use fallback immediately.
 				setTimeout(function () {
 					var sql = fallbackGenerateSQL(question);
 					setSqlInput(sql);
@@ -171,9 +222,6 @@
 			}
 		}, [question, apiConfigured]);
 
-		/**
-		 * Execute the SQL query.
-		 */
 		var handleRunQuery = useCallback(function () {
 			if (!sqlInput.trim()) {
 				setError(l10n.invalidSQL || 'No SQL to execute.');
@@ -182,21 +230,20 @@
 
 			setLoading(true);
 			setError(null);
-			setResults(null);
+			setSqlResults(null);
 			setQueryInfo(null);
 
 			doAction('execute_query', { sql: sqlInput })
 				.then(function (resp) {
 					setLoading(false);
 					if (resp.success && resp.data) {
-						setResults(resp.data.data || []);
+						setSqlResults(resp.data.data || []);
 						setQueryInfo({
 							sql: resp.data.sql || sqlInput,
 							timeMs: resp.data.time_ms || 0,
 							rows: resp.data.rows || (resp.data.data ? resp.data.data.length : 0),
 						});
 
-						// Save to history.
 						doAction('save_history', {
 							question: question,
 							sql: resp.data.sql || sqlInput,
@@ -205,7 +252,7 @@
 							if (hResp.success && hResp.data) {
 								setHistory(hResp.data.history || []);
 							}
-						}).catch(function () { });
+						}).catch(function () {});
 					} else {
 						var errorMsg = resp.data && resp.data.message ? resp.data.message : (l10n.errorOccurred || 'Unknown error');
 						setError(errorMsg);
@@ -217,32 +264,77 @@
 				});
 		}, [sqlInput, question]);
 
-		/**
-		 * Load a history item.
-		 */
 		var handleLoadHistory = useCallback(function (item) {
 			setQuestion(item.question || '');
 			setSqlInput(item.sql || '');
 		}, []);
 
-		/**
-		 * Clear all history.
-		 */
 		var handleClearHistory = useCallback(function () {
 			doAction('clear_history').then(function (resp) {
 				if (resp.success) {
 					setHistory([]);
 				}
-			}).catch(function () { });
+			}).catch(function () {});
 		}, []);
 
 		// ------------------------------------------------------------------- //
-		//  RENDER HELPERS
+		//  HANDLERS — Insight Mode
 		// ------------------------------------------------------------------- //
 
-		/**
-		 * Render the API status indicator.
-		 */
+		var handleGenerateInsight = useCallback(function () {
+			if (!question.trim()) {
+				setError(l10n.enterQuestion || 'Please enter a question.');
+				return;
+			}
+
+			setLoading(true);
+			setError(null);
+			setInsightData(null);
+
+			// Destroy any existing chart before new insight.
+			if (typeof SILC_WIA_Charts !== 'undefined') {
+				SILC_WIA_Charts.destroyChart('insight-chart-canvas');
+			}
+
+			doAction('generate_insight', { question: question })
+				.then(function (resp) {
+					setLoading(false);
+					if (resp.success && resp.data) {
+						setInsightData(resp.data);
+
+						// Save to insight history.
+						doAction('get_insight_history').then(function (hResp) {
+							if (hResp.success && hResp.data) {
+								setInsightHistory(hResp.data.history || []);
+							}
+						}).catch(function () {});
+					} else {
+						var msg = resp.data && resp.data.message ? resp.data.message : (l10n.errorOccurred || 'Failed to generate insight');
+						setError(msg);
+					}
+				})
+				.catch(function () {
+					setLoading(false);
+					setError('Network error. Please try again.');
+				});
+		}, [question]);
+
+		var handleLoadInsightHistory = useCallback(function (item) {
+			setQuestion(item.question || '');
+		}, []);
+
+		var handleClearInsightHistory = useCallback(function () {
+			doAction('clear_insight_history').then(function (resp) {
+				if (resp.success) {
+					setInsightHistory([]);
+				}
+			}).catch(function () {});
+		}, []);
+
+		// ------------------------------------------------------------------- //
+		//  RENDER HELPERS — Common
+		// ------------------------------------------------------------------- //
+
 		function renderApiStatus() {
 			var badge;
 			if (apiConfigured) {
@@ -268,19 +360,20 @@
 			);
 		}
 
-		/**
-		 * Render the results table or JSON.
-		 */
-		function renderResults() {
-			if (!results) {
+		// ------------------------------------------------------------------- //
+		//  RENDER HELPERS — SQL Mode Results
+		// ------------------------------------------------------------------- //
+
+		function renderSqlResults() {
+			if (!sqlResults) {
 				return el('p', { className: 'silc-wia-muted' }, l10n.noResults || 'Run a query to see results.');
 			}
 
-			if (results.length === 0) {
+			if (sqlResults.length === 0) {
 				return el('p', {}, l10n.noResults || 'No results found.');
 			}
 
-			var columns = Object.keys(results[0]);
+			var columns = Object.keys(sqlResults[0]);
 
 			var tableEl = el('div', { className: 'silc-wia-results-container' },
 				el('table', { className: 'silc-wia-results-table' },
@@ -292,7 +385,7 @@
 						)
 					),
 					el('tbody', null,
-						results.map(function (row, idx) {
+						sqlResults.map(function (row, idx) {
 							return el('tr', { key: idx },
 								columns.map(function (col) {
 									var val = row[col];
@@ -310,7 +403,7 @@
 			);
 
 			var jsonEl = el('pre', { className: 'silc-wia-json-display' },
-				JSON.stringify(results, null, 2)
+				JSON.stringify(sqlResults, null, 2)
 			);
 
 			return el(TabPanel, {
@@ -326,6 +419,390 @@
 		}
 
 		// ------------------------------------------------------------------- //
+		//  RENDER HELPERS — Insight Mode
+		// ------------------------------------------------------------------- //
+
+		function renderInsightResults() {
+			if (!insightData) {
+				return el('p', { className: 'silc-wia-muted' },
+					'Ask a question and click "Get Insight" to see results here.'
+				);
+			}
+
+			if (insightData.empty) {
+				return el('div', { className: 'silc-wia-insight-empty' },
+					el('p', { className: 'silc-wia-insight-empty-icon' }, '\uD83D\uDCCB'),
+					el('p', null, insightData.empty_message || l10n.noResults || 'No results found.')
+				);
+			}
+
+			var type = insightData.type || 'answer';
+			var parts = [];
+
+			// Metadata bar.
+			if (insightData.sql) {
+				var metaItems = [];
+				if (insightData.sql_time_ms) {
+					metaItems.push('Executed in ' + insightData.sql_time_ms + 'ms');
+				}
+				if (typeof insightData.rows_returned !== 'undefined') {
+					metaItems.push(insightData.rows_returned + ' row(s)');
+				}
+
+				if (metaItems.length > 0) {
+					parts.push(
+						el('div', { className: 'silc-wia-query-info', key: 'meta' },
+							metaItems.map(function (item, i) {
+								return el('span', { key: i }, item);
+							})
+						)
+					);
+				}
+			}
+
+			// Render based on type.
+			switch (type) {
+				case 'chart':
+					parts.push(renderChartResult());
+					break;
+				case 'list':
+					parts.push(renderListResult());
+					break;
+				case 'answer':
+				default:
+					parts.push(renderAnswerResult());
+					break;
+			}
+
+			return el('div', null, parts);
+		}
+
+		function renderChartResult() {
+			var config = insightData.chart_config;
+			if (!config || !config.labels || config.labels.length === 0) {
+				return el('p', { key: 'chart-empty' }, 'No chart data available.');
+			}
+
+			var chartTypeLabel = config.chart_type || 'bar';
+			var title = config.title || '';
+
+			return el('div', { className: 'silc-wia-chart-container', key: 'chart' },
+				title ? el('h3', { className: 'silc-wia-chart-title' }, title) : null,
+				el('div', { className: 'silc-wia-chart-wrapper' },
+					el('canvas', {
+						id: 'insight-chart-canvas',
+						className: 'silc-wia-chart-canvas',
+					})
+				),
+				el('div', { className: 'silc-wia-chart-type-badge' },
+					'Chart type: ' + chartTypeLabel
+				)
+			);
+		}
+
+		function renderListResult() {
+			var listData = insightData.list_data;
+			var listConfig = insightData.list_config;
+
+			if (!listData || listData.length === 0) {
+				return el('p', { key: 'list-empty' }, 'No list data available.');
+			}
+
+			// Determine display columns.
+			var displayCols = [];
+			if (listConfig && listConfig.display_columns && listConfig.display_columns.length > 0) {
+				displayCols = listConfig.display_columns;
+			} else if (listData.length > 0) {
+				displayCols = Object.keys(listData[0]).filter(function (c) { return c !== '_links'; });
+			}
+
+			var titleCol = (listConfig && listConfig.title_column) ? listConfig.title_column : (displayCols[0] || '');
+
+			var items = listData.map(function (row, idx) {
+				var titleText = row[titleCol] || ('Item ' + (idx + 1));
+				var details = [];
+
+				displayCols.forEach(function (col) {
+					if (col === titleCol) return;
+					if (col === '_links') return;
+					var val = row[col];
+					if (val === null || val === undefined) val = '';
+					details.push(
+						el('span', { className: 'silc-wia-list-detail', key: col },
+							el('span', { className: 'silc-wia-list-detail-label' }, col + ': '),
+							el('span', { className: 'silc-wia-list-detail-value' }, String(val))
+						)
+					);
+				});
+
+				// Links.
+				var links = [];
+				if (row._links) {
+					Object.keys(row._links).forEach(function (linkCol) {
+						var url = row._links[linkCol];
+						if (url) {
+							links.push(
+								el('a', {
+									key: linkCol,
+									href: url,
+									target: '_blank',
+									rel: 'noopener noreferrer',
+									className: 'silc-wia-list-link',
+									title: l10n.openInNewTab || 'Open in new tab',
+								}, '\uD83D\uDD17 ' + linkCol)
+							);
+						}
+					});
+				}
+
+				return el('div', { className: 'silc-wia-list-item', key: idx },
+					el('div', { className: 'silc-wia-list-item-title' },
+						String(titleText),
+						links.length > 0 ? el('span', { className: 'silc-wia-list-item-links' }, links) : null
+					),
+					details.length > 0 ? el('div', { className: 'silc-wia-list-item-details' }, details) : null
+				);
+			});
+
+			return el('div', { className: 'silc-wia-list-container', key: 'list' },
+				items
+			);
+		}
+
+		function renderAnswerResult() {
+			var answerText = insightData.answer_text || '';
+			var answerValue = insightData.answer_value || '';
+			var answerLabel = insightData.answer_label || '';
+
+			return el('div', { className: 'silc-wia-answer-container', key: 'answer' },
+				answerValue ? el('div', { className: 'silc-wia-answer-value' }, String(answerValue)) : null,
+				answerLabel ? el('div', { className: 'silc-wia-answer-label' }, String(answerLabel)) : null,
+				answerText ? el('div', { className: 'silc-wia-answer-text' }, String(answerText)) : null
+			);
+		}
+
+		// ------------------------------------------------------------------- //
+		//  MODE TABBED CONTENT
+		// ------------------------------------------------------------------- //
+
+		function renderModeContent() {
+			if (mode === 'sql') {
+				return el('div', { className: 'silc-wia-main-content' },
+
+					// Left column: SQL Input + Results.
+					el('div', { className: 'silc-wia-left' },
+
+						// Input card.
+						el('div', { className: 'silc-wia-card silc-wia-mb-3' },
+							el('h2', null, 'Ask a Question'),
+							el('div', { className: 'silc-wia-input-area' },
+								el('div', { className: 'silc-wia-input-row' },
+									el(TextControl, {
+										placeholder: l10n.askQuestion || 'Ask a question about your WooCommerce data...',
+										value: question,
+										onChange: setQuestion,
+										onKeyDown: function (e) {
+											if (e.key === 'Enter' && !e.shiftKey) {
+												e.preventDefault();
+												handleGenerateSQL();
+											}
+										},
+									}),
+									el(Button, {
+										isPrimary: true,
+										onClick: handleGenerateSQL,
+										disabled: isLoading || !question.trim(),
+									}, isLoading ? el(Spinner, {}) : (l10n.generateSQL || 'Generate SQL'))
+								),
+								el('div', { className: 'silc-wia-sql-field' },
+									el(TextareaControl, {
+										label: 'SQL Query:',
+										help: 'Edit the SQL if needed, then click Run Query.',
+										value: sqlInput,
+										onChange: setSqlInput,
+										placeholder: 'SELECT ...',
+										rows: 4,
+									})
+								),
+								el(Button, {
+									isSecondary: true,
+									onClick: handleRunQuery,
+									disabled: isLoading || !sqlInput.trim(),
+								}, isLoading ? el(Spinner, {}) : (l10n.runQuery || 'Run Query'))
+							)
+						),
+
+						// Results card.
+						el('div', { className: 'silc-wia-card' },
+							el('h2', null, l10n.results || 'Results'),
+
+							queryInfo ? el('div', { className: 'silc-wia-query-info' },
+								el('span', null, 'Query executed in ' + queryInfo.timeMs + 'ms'),
+								el('span', null, queryInfo.rows + ' row(s) returned')
+							) : null,
+
+							renderSqlResults()
+						)
+					),
+
+					// Right column: History + Schema.
+					el('div', { className: 'silc-wia-right' },
+						renderSqlHistoryCard(),
+						renderSchemaCard()
+					)
+				);
+			}
+
+			// Insight mode layout.
+			return el('div', { className: 'silc-wia-main-content' },
+
+				// Left column: Input + Insight Results.
+				el('div', { className: 'silc-wia-left' },
+
+					// Insight input card.
+					el('div', { className: 'silc-wia-card silc-wia-mb-3' },
+						el('h2', null, 'Ask for an Insight'),
+						el('div', { className: 'silc-wia-input-area' },
+							el('div', { className: 'silc-wia-input-row' },
+								el(TextControl, {
+									placeholder: l10n.askQuestion || 'Ask a question about your WooCommerce data...',
+									value: question,
+									onChange: setQuestion,
+									onKeyDown: function (e) {
+										if (e.key === 'Enter' && !e.shiftKey) {
+											e.preventDefault();
+											handleGenerateInsight();
+										}
+									},
+								}),
+								el(Button, {
+									isPrimary: true,
+									onClick: handleGenerateInsight,
+									disabled: isLoading || !question.trim() || !apiConfigured,
+									title: !apiConfigured ? (l10n.apiNotConfigured || 'API not configured') : '',
+								}, isLoading ? el(Spinner, {}) : (l10n.getInsight || 'Get Insight'))
+							),
+							!apiConfigured ? el('p', {
+								style: { color: '#b32d2e', fontSize: '12px', marginTop: '4px' },
+							}, l10n.apiNotConfigured || 'API not configured. Go to Settings to add your API key.') : null
+						)
+					),
+
+					// Insight results card.
+					el('div', { className: 'silc-wia-card' },
+						el('h2', null, l10n.results || 'Results'),
+						renderInsightResults()
+					)
+				),
+
+				// Right column: Insight History.
+				el('div', { className: 'silc-wia-right' },
+					renderInsightHistoryCard()
+				)
+			);
+		}
+
+		// ------------------------------------------------------------------- //
+		//  SIDEBAR CARDS
+		// ------------------------------------------------------------------- //
+
+		function renderSqlHistoryCard() {
+			return el('div', { className: 'silc-wia-card silc-wia-mb-3' },
+				el('div', {
+					className: 'silc-wia-flex silc-wia-items-center silc-wia-gap-2',
+					style: { justifyContent: 'space-between', marginBottom: '12px' },
+				},
+					el('h2', { style: { margin: 0, border: 'none', padding: 0 } }, l10n.history || 'Query History'),
+					history.length > 0 ? el(Button, {
+						isSmall: true,
+						isDestructive: true,
+						variant: 'link',
+						onClick: handleClearHistory,
+					}, l10n.clearHistory || 'Clear') : null
+				),
+				history.length > 0
+					? el('div', { className: 'silc-wia-history-list' },
+						history.map(function (item, idx) {
+							return el('div', {
+								key: item.id || idx,
+								className: 'silc-wia-history-item',
+								onClick: function () { handleLoadHistory(item); },
+							},
+								el('div', { className: 'question' }, item.question || '(Direct SQL)'),
+								el('div', { className: 'sql-preview' }, item.sql || ''),
+								item.time ? el('div', { className: 'time' }, item.time) : null
+							);
+						})
+					)
+					: el('p', { style: { color: '#787c82', fontSize: '13px' } }, 'No history yet.')
+			);
+		}
+
+		function renderSchemaCard() {
+			return el('div', { className: 'silc-wia-card' },
+				el(Panel, null,
+					el(PanelBody, {
+						title: 'Database Schema Reference',
+						initialOpen: false,
+					},
+						el('pre', {
+							style: {
+								fontSize: '11px',
+								lineHeight: '1.4',
+								maxHeight: '400px',
+								overflow: 'auto',
+								background: '#f6f7f7',
+								padding: '8px',
+								borderRadius: '4px',
+							},
+						}, schemaContext || 'Loading schema...')
+					)
+				)
+			);
+		}
+
+		function renderInsightHistoryCard() {
+			return el('div', { className: 'silc-wia-card' },
+				el('div', {
+					className: 'silc-wia-flex silc-wia-items-center silc-wia-gap-2',
+					style: { justifyContent: 'space-between', marginBottom: '12px' },
+				},
+					el('h2', { style: { margin: 0, border: 'none', padding: 0 } }, l10n.insightHistory || 'Insight History'),
+					insightHistory.length > 0 ? el(Button, {
+						isSmall: true,
+						isDestructive: true,
+						variant: 'link',
+						onClick: handleClearInsightHistory,
+					}, l10n.clearInsightHistory || 'Clear') : null
+				),
+				insightHistory.length > 0
+					? el('div', { className: 'silc-wia-history-list' },
+						insightHistory.map(function (item, idx) {
+							var typeLabel = item.type || '?';
+							var typeIcon = '';
+							if (typeLabel === 'chart') typeIcon = '\uD83D\uDCCA';
+							else if (typeLabel === 'list') typeIcon = '\uD83D\uDCCB';
+							else if (typeLabel === 'answer') typeIcon = '\u2139\uFE0F';
+
+							return el('div', {
+								key: item.id || idx,
+								className: 'silc-wia-history-item',
+								onClick: function () { handleLoadInsightHistory(item); },
+							},
+								el('div', { className: 'question' },
+									typeIcon ? el('span', { style: { marginRight: '6px' } }, typeIcon) : null,
+									item.question || '(Unknown)'
+								),
+								el('div', { className: 'sql-preview' }, 'Type: ' + typeLabel),
+								item.time ? el('div', { className: 'time' }, item.time) : null
+							);
+						})
+					)
+					: el('p', { style: { color: '#787c82', fontSize: '13px' } }, l10n.noInsightHistory || 'No insight history yet.')
+			);
+		}
+
+		// ------------------------------------------------------------------- //
 		//  MAIN RENDER
 		// ------------------------------------------------------------------- //
 
@@ -338,128 +815,38 @@
 				onRemove: function () { setError(null); },
 			}, error) : null,
 
-			// Top row: API status indicator.
+			// Top row: API status + Mode tabs.
 			el('div', { className: 'silc-wia-flex silc-wia-items-center silc-wia-gap-2 silc-wia-mb-3' },
 				renderApiStatus()
 			),
 
-			// Main content grid.
-			el('div', { className: 'silc-wia-main-content' },
-
-				// Left column: Input + Results.
-				el('div', { className: 'silc-wia-left' },
-
-					// Input card.
-					el('div', { className: 'silc-wia-card silc-wia-mb-3' },
-						el('h2', null, 'Ask a Question'),
-						el('div', { className: 'silc-wia-input-area' },
-							el('div', { className: 'silc-wia-input-row' },
-								el(TextControl, {
-									placeholder: l10n.askQuestion || 'Ask a question about your WooCommerce data...',
-									value: question,
-									onChange: setQuestion,
-									onKeyDown: function (e) {
-										if (e.key === 'Enter' && !e.shiftKey) {
-											e.preventDefault();
-											handleGenerateSQL();
-										}
-									},
-								}),
-								el(Button, {
-									isPrimary: true,
-									onClick: handleGenerateSQL,
-									disabled: isLoading || !question.trim(),
-								}, isLoading ? el(Spinner, {}) : (l10n.generateSQL || 'Generate SQL'))
-							),
-							el('div', { className: 'silc-wia-sql-field' },
-								el(TextareaControl, {
-									label: 'SQL Query:',
-									help: 'Edit the SQL if needed, then click Run Query.',
-									value: sqlInput,
-									onChange: setSqlInput,
-									placeholder: 'SELECT ...',
-									rows: 4,
-								})
-							),
-							el(Button, {
-								isSecondary: true,
-								onClick: handleRunQuery,
-								disabled: isLoading || !sqlInput.trim(),
-							}, isLoading ? el(Spinner, {}) : (l10n.runQuery || 'Run Query'))
-						)
-					),
-
-					// Results card.
-					el('div', { className: 'silc-wia-card' },
-						el('h2', null, l10n.results || 'Results'),
-
-						queryInfo ? el('div', { className: 'silc-wia-query-info' },
-							el('span', null, 'Query executed in ' + queryInfo.timeMs + 'ms'),
-							el('span', null, queryInfo.rows + ' row(s) returned')
-						) : null,
-
-						renderResults()
-					)
-				),
-
-				// Right column: History + Schema.
-				el('div', { className: 'silc-wia-right' },
-
-					// History card.
-					el('div', { className: 'silc-wia-card silc-wia-mb-3' },
-						el('div', { className: 'silc-wia-flex silc-wia-items-center silc-wia-gap-2', style: { justifyContent: 'space-between', marginBottom: '12px' } },
-							el('h2', { style: { margin: 0, border: 'none', padding: 0 } }, l10n.history || 'Query History'),
-							history.length > 0 ? el(Button, {
-								isSmall: true,
-								isDestructive: true,
-								variant: 'link',
-								onClick: handleClearHistory,
-							}, l10n.clearHistory || 'Clear') : null
-						),
-						history.length > 0 ? el('div', { className: 'silc-wia-history-list' },
-							history.map(function (item, idx) {
-								return el('div', {
-									key: item.id || idx,
-									className: 'silc-wia-history-item',
-									onClick: function () { handleLoadHistory(item); },
-								},
-									el('div', { className: 'question' }, item.question || '(Direct SQL)'),
-									el('div', { className: 'sql-preview' }, item.sql || ''),
-									item.time ? el('div', { className: 'time' }, item.time) : null
-								);
-							})
-						) : el('p', { style: { color: '#787c82', fontSize: '13px' } }, 'No history yet.')
-					),
-
-					// Schema card (collapsible).
-					el('div', { className: 'silc-wia-card' },
-						el(Panel, null,
-							el(PanelBody, {
-								title: 'Database Schema Reference',
-								initialOpen: false,
-							},
-								el('pre', {
-									style: {
-										fontSize: '11px',
-										lineHeight: '1.4',
-										maxHeight: '400px',
-										overflow: 'auto',
-										background: '#f6f7f7',
-										padding: '8px',
-										borderRadius: '4px',
-									},
-								}, schemaContext || 'Loading schema...')
-							)
-						)
-					)
-				)
+			// Mode switcher.
+			el('div', { className: 'silc-wia-mode-tabs silc-wia-mb-3' },
+				el(Button, {
+					isPrimary: mode === 'sql',
+					isSecondary: mode !== 'sql',
+					onClick: function () { setMode('sql'); setError(null); },
+					style: { marginRight: '8px' },
+				}, l10n.sqlMode || 'SQL Mode'),
+				el(Button, {
+					isPrimary: mode === 'insight',
+					isSecondary: mode !== 'insight',
+					onClick: function () { setMode('insight'); setError(null); },
+					disabled: !apiConfigured,
+					title: !apiConfigured ? (l10n.apiNotConfigured || 'API not configured') : '',
+				}, l10n.insightMode || 'Insight Mode')
 			),
+
+			// Mode content.
+			renderModeContent(),
 
 			// Footer.
 			el('div', { className: 'silc-wia-footer' },
-				'SILC WooInsight AI v' + (data.pluginVersion || '1.0.0'),
+				'SILC WooInsight AI v' + (data.pluginVersion || '2.0.0'),
 				' — ',
-				'SQL queries are validated server-side. Only SELECT queries against WooCommerce tables are allowed.',
+				mode === 'sql'
+					? 'SQL queries are validated server-side. Only SELECT queries against WooCommerce tables are allowed.'
+					: 'Insights are generated by AI, SQL validated server-side, and rendered automatically.',
 				el('br'),
 				'AI via ',
 				el(ExternalLink, {
@@ -479,7 +866,7 @@
 
 	function fallbackGenerateSQL(question) {
 		var q = question.toLowerCase().trim();
-		var prefix = 'wp_'; // Will be adjusted server-side.
+		var prefix = 'wp_';
 
 		// Top products.
 		if (/top\s+(\d+)?\s*products?\b/i.test(q) && /(revenue|sales|earned|sold)/i.test(q)) {

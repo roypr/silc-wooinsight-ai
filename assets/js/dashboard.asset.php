@@ -6,6 +6,7 @@
 		'wp-api-fetch',
 		'wp-hooks',
 		'wp-html-entities',
+		'silc-wia-chart-renderer',
 	),
-	'version' => '1.0.0',
+	'version' => '2.0.0',
 );

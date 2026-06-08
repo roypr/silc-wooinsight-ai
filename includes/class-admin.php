@@ -165,7 +165,7 @@ class SILC_WIA_Admin {
 			: SILC_WIA_API::DEFAULT_MODEL;
 
 		$output['max_tokens'] = isset( $input['max_tokens'] )
-			? max( 50, min( 4096, intval( $input['max_tokens'] ) ) )
+			? max( 50, min( 8192, intval( $input['max_tokens'] ) ) )
 			: SILC_WIA_API::DEFAULT_MAX_TOKENS;
 
 		$output['temperature'] = isset( $input['temperature'] )
@@ -262,7 +262,7 @@ class SILC_WIA_Admin {
 			min="50" max="4096" step="50"
 		/>
 		<p class="description">
-			<?php esc_html_e( 'Maximum tokens in the response (50–4096).', 'silc-wooinsight-ai' ); ?>
+			<?php esc_html_e( 'Maximum tokens in the response (50–8192). Insight mode internally overrides to 1500.', 'silc-wooinsight-ai' ); ?>
 		</p>
 		<?php
 	}
@@ -429,9 +429,30 @@ class SILC_WIA_Admin {
 		// Enqueue WordPress component styles.
 		wp_enqueue_style( 'wp-components' );
 
+		// Enqueue Chart.js library.
+		$chartjs_file = SILC_WIA_PATH . 'assets/lib/chart.min.js';
+		if ( file_exists( $chartjs_file ) ) {
+			wp_enqueue_script(
+				'silc-wia-chartjs',
+				SILC_WIA_URL . 'assets/lib/chart.min.js',
+				array(),
+				'4.4.7',
+				true
+			);
+		}
+
+		// Enqueue Chart renderer (depends on Chart.js).
+		wp_enqueue_script(
+			'silc-wia-chart-renderer',
+			SILC_WIA_URL . 'assets/js/chart-renderer.js',
+			array( 'silc-wia-chartjs' ),
+			SILC_WIA_VERSION,
+			true
+		);
+
 		// Enqueue our dashboard script.
 		$asset_file = SILC_WIA_PATH . 'assets/js/dashboard.asset.php';
-		$deps       = array( 'wp-element', 'wp-components', 'wp-i18n', 'wp-api-fetch', 'wp-hooks', 'wp-html-entities' );
+		$deps       = array( 'wp-element', 'wp-components', 'wp-i18n', 'wp-api-fetch', 'wp-hooks', 'wp-html-entities', 'silc-wia-chart-renderer' );
 		$version    = SILC_WIA_VERSION;
 
 		if ( file_exists( $asset_file ) ) {
@@ -463,6 +484,7 @@ class SILC_WIA_Admin {
 			'pluginUrl'      => SILC_WIA_URL,
 			'settingsUrl'    => admin_url( 'admin.php?page=silc-wooinsight-ai-settings' ),
 			'apiConfigured'  => $api_configured,
+			'pluginVersion'  => SILC_WIA_VERSION,
 			'l10n'           => array(
 				'askQuestion'      => __( 'Ask a question about your WooCommerce data...', 'silc-wooinsight-ai' ),
 				'generateSQL'      => __( 'Generate SQL', 'silc-wooinsight-ai' ),
@@ -480,6 +502,19 @@ class SILC_WIA_Admin {
 				'settings'         => __( 'Settings', 'silc-wooinsight-ai' ),
 				'usingFallback'    => __( 'Using built-in templates (API not configured)', 'silc-wooinsight-ai' ),
 				'apiReady'         => __( 'AI Ready (API)', 'silc-wooinsight-ai' ),
+				// Insight mode strings.
+				'insights'         => __( 'Insights', 'silc-wooinsight-ai' ),
+				'getInsight'       => __( 'Get Insight', 'silc-wooinsight-ai' ),
+				'generatingInsight' => __( 'Generating insight...', 'silc-wooinsight-ai' ),
+				'insightHistory'   => __( 'Insight History', 'silc-wooinsight-ai' ),
+				'clearInsightHistory' => __( 'Clear Insight History', 'silc-wooinsight-ai' ),
+				'sqlMode'          => __( 'SQL Mode', 'silc-wooinsight-ai' ),
+				'insightMode'      => __( 'Insight Mode', 'silc-wooinsight-ai' ),
+				'chart'            => __( 'Chart', 'silc-wooinsight-ai' ),
+				'list'             => __( 'List', 'silc-wooinsight-ai' ),
+				'answer'           => __( 'Answer', 'silc-wooinsight-ai' ),
+				'noInsightHistory' => __( 'No insight history yet.', 'silc-wooinsight-ai' ),
+				'openInNewTab'     => __( 'Open in new tab', 'silc-wooinsight-ai' ),
 			),
 		) );
 

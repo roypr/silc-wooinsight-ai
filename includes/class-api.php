@@ -26,6 +26,11 @@ class SILC_WIA_API {
 	const DEFAULT_TEMPERATURE = 0.2;
 
 	/**
+	 * Max tokens for insight generation (JSON output needs more).
+	 */
+	const INSIGHT_MAX_TOKENS = 1500;
+
+	/**
 	 * Get API settings.
 	 *
 	 * @return array
@@ -218,6 +223,283 @@ class SILC_WIA_API {
 		$sql = rtrim( $sql, "; \t\n\r\0\x0B" );
 
 		return trim( $sql );
+	}
+
+	// ----------------------------------------------------------------------- //
+	//  INSIGHT GENERATION (v2.0)
+	// ----------------------------------------------------------------------- //
+
+	/**
+	 * Generate a structured insight from a natural language question.
+	 *
+	 * Uses a dedicated prompt that asks the AI to return valid JSON with
+	 * fields: sql, type, chart_config, list_config, answer_text.
+	 *
+	 * Overrides max_tokens to 1500 for JSON output capacity.
+	 *
+	 * @param string $question       The user's natural language question.
+	 * @param string $schema_context The database schema context for the prompt.
+	 * @return array{success: bool, insight: array|null, error: string}
+	 */
+	public static function generate_insight( string $question, string $schema_context ): array {
+		$settings = self::get_settings();
+
+		if ( empty( $settings['api_key'] ) ) {
+			return array(
+				'success' => false,
+				'insight' => null,
+				'error'   => __( 'API key is not configured. Please go to Settings and add your API key.', 'silc-wooinsight-ai' ),
+			);
+		}
+
+		$api_url = untrailingslashit( $settings['api_url'] );
+
+		// Build prompts.
+		$system_prompt = self::build_insight_system_prompt();
+		$user_prompt   = self::build_insight_user_prompt( $question, $schema_context );
+
+		$body = array(
+			'model'       => $settings['model'],
+			'messages'    => array(
+				array( 'role' => 'system', 'content' => $system_prompt ),
+				array( 'role' => 'user',   'content' => $user_prompt ),
+			),
+			'max_tokens'  => self::INSIGHT_MAX_TOKENS,
+			'temperature' => 0.2,
+		);
+
+		$response = wp_remote_post(
+			$api_url . '/chat/completions',
+			array(
+				'timeout'   => 600,
+				'headers'   => array(
+					'Authorization' => 'Bearer ' . $settings['api_key'],
+					'Content-Type'  => 'application/json',
+				),
+				'body'      => wp_json_encode( $body ),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return array(
+				'success' => false,
+				'insight' => null,
+				'error'   => sprintf(
+					/* translators: %s: error message */
+					__( 'API request failed: %s', 'silc-wooinsight-ai' ),
+					$response->get_error_message()
+				),
+			);
+		}
+
+		$status_code = wp_remote_retrieve_response_code( $response );
+		$body_raw    = wp_remote_retrieve_body( $response );
+		$data        = json_decode( $body_raw, true );
+
+		if ( $status_code !== 200 ) {
+			$error_msg = isset( $data['error']['message'] ) ? $data['error']['message'] : sprintf(
+				/* translators: %d: HTTP status code */
+				__( 'API returned HTTP %d', 'silc-wooinsight-ai' ),
+				$status_code
+			);
+			return array(
+				'success' => false,
+				'insight' => null,
+				'error'   => $error_msg,
+			);
+		}
+
+		// Extract the response text.
+		$content = '';
+		if ( isset( $data['choices'][0]['message']['content'] ) ) {
+			$content = $data['choices'][0]['message']['content'];
+		}
+
+		if ( empty( $content ) ) {
+			return array(
+				'success' => false,
+				'insight' => null,
+				'error'   => __( 'API returned an empty response.', 'silc-wooinsight-ai' ),
+			);
+		}
+
+		// Parse the JSON with multi-strategy fallback.
+		$insight = self::parse_insight_json( $content );
+
+		if ( null === $insight ) {
+			// Fallback: re-prompt the AI asking for ONLY valid JSON.
+			$retry_body = $body;
+			$retry_body['messages'][] = array(
+				'role'    => 'user',
+				'content' => 'Your previous response was not valid JSON. Return ONLY valid JSON with no markdown, no explanation, just the JSON object.',
+			);
+			$retry_body['messages'][] = array(
+				'role'    => 'assistant',
+				'content' => $content,
+			);
+
+			$retry_response = wp_remote_post(
+				$api_url . '/chat/completions',
+				array(
+					'timeout'   => 600,
+					'headers'   => array(
+						'Authorization' => 'Bearer ' . $settings['api_key'],
+						'Content-Type'  => 'application/json',
+					),
+					'body'      => wp_json_encode( $retry_body ),
+				)
+			);
+
+			if ( ! is_wp_error( $retry_response ) ) {
+				$retry_body_raw = wp_remote_retrieve_body( $retry_response );
+				$retry_data     = json_decode( $retry_body_raw, true );
+				if ( isset( $retry_data['choices'][0]['message']['content'] ) ) {
+					$insight = self::parse_insight_json( $retry_data['choices'][0]['message']['content'] );
+				}
+			}
+		}
+
+		if ( null === $insight ) {
+			return array(
+				'success' => false,
+				'insight' => null,
+				'error'   => __( 'Could not parse insight JSON from the API response.', 'silc-wooinsight-ai' ),
+			);
+		}
+
+		return array(
+			'success' => true,
+			'insight' => $insight,
+			'error'   => '',
+		);
+	}
+
+	/**
+	 * Build the system prompt for insight generation (structured JSON output).
+	 *
+	 * @return string
+	 */
+	private static function build_insight_system_prompt(): string {
+		return 'You are a WooCommerce data analyst. Given a database schema and a user question, '
+			. 'you must return ONLY valid JSON (no other text, no markdown) with this structure:'
+			. "\n\n"
+			. '{'
+			. "\n  \"sql\": \"The SQL SELECT query to execute\","
+			. "\n  \"type\": \"chart\" | \"list\" | \"answer\","
+			. "\n  \"chart_config\": {"
+			. "\n    \"chart_type\": \"bar\" | \"line\" | \"pie\" | \"horizontalBar\" | \"doughnut\","
+			. "\n    \"title\": \"Chart title\","
+			. "\n    \"labels\": [\"array of label strings\"],"
+			. "\n    \"datasets\": ["
+			. "\n      {"
+			. "\n        \"label\": \"Dataset label\","
+			. "\n        \"data\": [numeric values],"
+			. "\n        \"backgroundColor\": [\"optional color array\"]"
+			. "\n      }"
+			. "\n    ],"
+			. "\n    \"x_label\": \"X-axis label (optional)\","
+			. "\n    \"y_label\": \"Y-axis label (optional)\""
+			. "\n  },"
+			. "\n  \"answer_text\": \"Human-readable answer text, e.g. 'Total orders last week: 247'\","
+			. "\n  \"list_config\": {"
+			. "\n    \"title_column\": \"Column name to use as the primary display text\","
+			. "\n    \"link_columns\": {"
+			. "\n      \"column_name\": \"link_type\""
+			. "\n    },"
+			. "\n    \"display_columns\": [\"col1\", \"col2\"],"
+			. "\n    \"value_formats\": {"
+			. "\n      \"total_sales\": \"currency\","
+			. "\n      \"order_total\": \"currency\","
+			. "\n      \"count\": \"number\""
+			. "\n    }"
+			. "\n  }"
+			. "\n}"
+			. "\n\nRULES:"
+			. "\n- type=\"chart\" when question asks for comparison, trend, distribution, or visualization"
+			. "\n- type=\"list\" when question asks for \"list\", \"show me\", \"who are\", \"which customers\", \"pending orders\", \"top products\""
+			. "\n- type=\"answer\" when question asks for count, total, average, or a single numeric answer"
+			. "\n- For chart type, pre-compute labels and datasets in chart_config (do NOT return raw data)"
+			. "\n- For list type, include link_columns mapping so the UI can generate admin links"
+			. "\n\nLINK COLUMN MAPPING RULES (CRITICAL):"
+			. "\n- Column \"order_id\" → link_type \"order\""
+			. "\n- Column \"parent_order_id\" → link_type \"order\""
+			. "\n- Column \"product_id\" → link_type \"product\""
+			. "\n- Column \"variation_id\" → link_type \"product\""
+			. "\n- Column \"customer_id\" → link_type \"user\""
+			. "\n- Column \"user_id\" → link_type \"user\""
+			. "\n- Column \"coupon_id\" → link_type \"coupon\""
+			. "\n- Column \"order_item_id\" → link_type \"order_item\""
+			. "\n\n- For answer type, provide a complete sentence in answer_text"
+			. "\n- Use COALESCE for potentially NULL numeric values"
+			. "\n- Always use proper date functions for time-based queries"
+			. "\n- Format currency values as plain numbers (frontend will add currency symbol)";
+	}
+
+	/**
+	 * Build the user prompt for insight generation.
+	 *
+	 * @param string $question       The user's question.
+	 * @param string $schema_context Database schema context.
+	 * @return string
+	 */
+	private static function build_insight_user_prompt( string $question, string $schema_context ): string {
+		return 'Here is the WooCommerce database schema (table prefix included):'
+			. "\n\n" . $schema_context
+			. "\n\nUser question: " . $question
+			. "\n\nReturn ONLY valid JSON with the SQL query, output type, and configuration as specified.";
+	}
+
+	/**
+	 * Parse insight JSON from the API response with multi-strategy fallback.
+	 *
+	 * Strategy chain:
+	 * 1. Direct JSON decode
+	 * 2. Strip markdown fences, then decode
+	 * 3. Regex extraction of JSON block
+	 *
+	 * @param string $raw_response The raw API response text.
+	 * @return array|null Parsed insight data or null on failure.
+	 */
+	public static function parse_insight_json( string $raw_response ): ?array {
+		// Strategy 1: Direct JSON decode.
+		$data = json_decode( $raw_response, true );
+		if ( self::is_valid_insight_json( $data ) ) {
+			return $data;
+		}
+
+		// Strategy 2: Strip markdown code fences and decode.
+		$cleaned = preg_replace( '/```(?:json)?\s*\n?/i', '', $raw_response );
+		$data    = json_decode( trim( $cleaned ), true );
+		if ( self::is_valid_insight_json( $data ) ) {
+			return $data;
+		}
+
+		// Strategy 3: Regex extract JSON block.
+		preg_match( '/\{.*\}/s', $raw_response, $matches );
+		if ( ! empty( $matches[0] ) ) {
+			$data = json_decode( $matches[0], true );
+			if ( self::is_valid_insight_json( $data ) ) {
+				return $data;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Validate that parsed insight data has the required fields.
+	 *
+	 * @param mixed $data The parsed data to validate.
+	 * @return bool True if valid.
+	 */
+	private static function is_valid_insight_json( $data ): bool {
+		if ( ! is_array( $data ) || ! isset( $data['sql'], $data['type'] ) ) {
+			return false;
+		}
+		if ( ! in_array( $data['type'], array( 'chart', 'list', 'answer' ), true ) ) {
+			return false;
+		}
+		return true;
 	}
 
 	/**

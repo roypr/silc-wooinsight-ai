@@ -365,3 +365,160 @@
 .silc-wia-footer a:hover {
 	text-decoration: underline;
 }
+
+/* =========================================================================
+   INSIGHT MODE (v2.0)
+   ========================================================================= */
+
+/* Mode tabs */
+.silc-wia-mode-tabs {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+/* Chart container */
+.silc-wia-chart-container {
+	margin-top: 12px;
+}
+
+.silc-wia-chart-title {
+	font-size: 15px;
+	font-weight: 600;
+	color: #1d2327;
+	margin: 0 0 12px 0;
+}
+
+.silc-wia-chart-wrapper {
+	position: relative;
+	width: 100%;
+	height: 300px;
+	background: #fafafa;
+	border: 1px solid #e5e5e5;
+	border-radius: 4px;
+	padding: 12px;
+}
+
+.silc-wia-chart-canvas {
+	width: 100% !important;
+	height: 100% !important;
+}
+
+.silc-wia-chart-type-badge {
+	display: inline-block;
+	margin-top: 8px;
+	padding: 2px 8px;
+	background: #f0f6fc;
+	color: #50575e;
+	border-radius: 3px;
+	font-size: 11px;
+}
+
+/* List container */
+.silc-wia-list-container {
+	max-height: 500px;
+	overflow-y: auto;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	margin-top: 12px;
+}
+
+.silc-wia-list-item {
+	padding: 10px 14px;
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.silc-wia-list-item:last-child {
+	border-bottom: none;
+}
+
+.silc-wia-list-item:hover {
+	background: #f6f7f7;
+}
+
+.silc-wia-list-item-title {
+	font-weight: 600;
+	color: #1d2327;
+	margin-bottom: 4px;
+	font-size: 14px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.silc-wia-list-item-links {
+	display: inline-flex;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.silc-wia-list-link {
+	display: inline-flex;
+	align-items: center;
+	font-size: 11px;
+	font-weight: 400;
+	color: #2271b1;
+	text-decoration: none;
+	padding: 1px 6px;
+	background: #f0f6fc;
+	border-radius: 3px;
+}
+
+.silc-wia-list-link:hover {
+	background: #d4e4f7;
+	text-decoration: underline;
+}
+
+.silc-wia-list-item-details {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 16px;
+	font-size: 12px;
+	color: #50575e;
+}
+
+.silc-wia-list-detail-label {
+	font-weight: 500;
+	color: #787c82;
+}
+
+/* Answer container */
+.silc-wia-answer-container {
+	padding: 20px;
+	text-align: center;
+}
+
+.silc-wia-answer-value {
+	font-size: 36px;
+	font-weight: 700;
+	color: #1d2327;
+	line-height: 1.2;
+	margin-bottom: 4px;
+}
+
+.silc-wia-answer-label {
+	font-size: 14px;
+	color: #50575e;
+	margin-bottom: 8px;
+}
+
+.silc-wia-answer-text {
+	font-size: 15px;
+	color: #3c434a;
+	line-height: 1.5;
+	max-width: 500px;
+	margin: 0 auto;
+}
+
+/* Empty state */
+.silc-wia-insight-empty {
+	text-align: center;
+	padding: 30px 20px;
+	color: #787c82;
+}
+
+.silc-wia-insight-empty-icon {
+	font-size: 32px;
+	margin: 0 0 8px 0;
+}
