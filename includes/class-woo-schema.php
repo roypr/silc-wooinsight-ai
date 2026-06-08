@@ -33,6 +33,51 @@ class SILC_WIA_Woo_Schema {
 	// ----------------------------------------------------------------------- //
 
 	/**
+	 * HPOS-specific table names (not present in legacy mode).
+	 *
+	 * @return array
+	 */
+	private static function get_hpos_table_names(): array {
+		return array(
+			'wc_orders',
+			'wc_order_addresses',
+			'wc_order_operational_data',
+			'wc_orders_meta',
+		);
+	}
+
+	/**
+	 * Detect whether WooCommerce HPOS is the active order storage backend.
+	 *
+	 * @return bool
+	 */
+	public static function is_hpos_enabled(): bool {
+		if ( ! class_exists( '\Automattic\WooCommerce\Utilities\OrderUtil' ) ) {
+			return false;
+		}
+		try {
+			return \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+		} catch ( \Exception $e ) {
+			return false;
+		}
+	}
+
+	/**
+	 * Get table names relevant for the active order storage backend.
+	 *
+	 * In HPOS mode, includes HPOS-specific tables. In legacy mode, excludes them
+	 * so the AI only sees tables that actually exist and are authoritative.
+	 *
+	 * @return array
+	 */
+	public static function get_active_table_names(): array {
+		if ( self::is_hpos_enabled() ) {
+			return self::get_table_names();
+		}
+		return array_values( array_diff( self::get_table_names(), self::get_hpos_table_names() ) );
+	}
+
+	/**
 	 * Get all known WooCommerce table names (without prefix).
 	 *
 	 * @return array
@@ -74,11 +119,15 @@ class SILC_WIA_Woo_Schema {
 	}
 
 	/**
-	 * Get detailed schema for all WooCommerce-relevant tables.
+	 * Get detailed schema for WooCommerce-relevant tables.
 	 *
+	 * When $active_only is true, only tables relevant to the active order
+	 * storage backend are returned (HPOS tables excluded in legacy mode).
+	 *
+	 * @param bool $active_only Whether to return only the active backend's schemas.
 	 * @return array<string, array>  Table name (without prefix) => columns.
 	 */
-	public static function get_table_schemas(): array {
+	public static function get_table_schemas( bool $active_only = false ): array {
 		$schemas = array(
 			// ---- ORDERS (HPOS) ---- //
 			'wc_orders' => array(
@@ -326,6 +375,12 @@ class SILC_WIA_Woo_Schema {
 			),
 		);
 
+		if ( $active_only && ! self::is_hpos_enabled() ) {
+			foreach ( self::get_hpos_table_names() as $hpos_table ) {
+				unset( $schemas[ $hpos_table ] );
+			}
+		}
+
 		return $schemas;
 	}
 
@@ -336,10 +391,14 @@ class SILC_WIA_Woo_Schema {
 	/**
 	 * Get WooCommerce post type mappings.
 	 *
+	 * When $active_only is true, excludes the legacy 'shop_order' post type
+	 * when HPOS is active, since orders are no longer stored as posts.
+	 *
+	 * @param bool $active_only Whether to return only the active backend's post types.
 	 * @return array<string, string>  post_type => description
 	 */
-	public static function get_post_types(): array {
-		return array(
+	public static function get_post_types( bool $active_only = false ): array {
+		$types = array(
 			'product'          => __( 'Simple or variable product', 'silc-wooinsight-ai' ),
 			'product_variation' => __( 'Product variation', 'silc-wooinsight-ai' ),
 			'shop_order'       => __( 'Order (legacy post type)', 'silc-wooinsight-ai' ),
@@ -347,6 +406,12 @@ class SILC_WIA_Woo_Schema {
 			'shop_coupon'      => __( 'Coupon / discount code', 'silc-wooinsight-ai' ),
 			'shop_subscription' => __( 'WooCommerce subscription', 'silc-wooinsight-ai' ),
 		);
+
+		if ( $active_only && self::is_hpos_enabled() ) {
+			unset( $types['shop_order'] );
+		}
+
+		return $types;
 	}
 
 	// ----------------------------------------------------------------------- //
@@ -497,24 +562,27 @@ class SILC_WIA_Woo_Schema {
 	// ----------------------------------------------------------------------- //
 
 	/**
-	 * Build a full schema context string for the AI prompt.
+	 * Build a schema context string for the AI prompt, scoped to the active
+	 * order storage backend (HPOS or legacy). This prevents the AI from seeing
+	 * tables and rules that don't apply to the current site.
 	 *
 	 * @return string
 	 */
 	public static function get_schema_context(): string {
 		$prefix  = self::prefix();
+		$is_hpos = self::is_hpos_enabled();
 		$lines   = array();
 		$lines[] = 'Database table prefix: "' . $prefix . '"';
 		$lines[] = '';
 		$lines[] = '=== TABLES AND COLUMNS ===';
 
-		foreach ( self::get_table_schemas() as $table => $cols ) {
+		foreach ( self::get_table_schemas( true ) as $table => $cols ) {
 			$lines[] = $prefix . $table . ' ( ' . implode( ', ', $cols ) . ' )';
 		}
 
 		$lines[] = '';
 		$lines[] = '=== WOOCOMMERCE POST TYPES ===';
-		foreach ( self::get_post_types() as $pt => $desc ) {
+		foreach ( self::get_post_types( true ) as $pt => $desc ) {
 			$lines[] = "- {$pt}: {$desc}";
 		}
 
@@ -544,19 +612,37 @@ class SILC_WIA_Woo_Schema {
 
 		$lines[] = '';
 		$lines[] = '=== RELATIONSHIPS ===';
-		$lines[] = '- Products (post_type="product") are stored in wp_posts. Their meta is in wp_postmeta.';
-		$lines[] = '- Orders can be in wp_posts (post_type="shop_order", legacy) OR in wp_wc_orders (HPOS).';
-		$lines[] = '- Order items are stored in wp_woocommerce_order_items and wp_woocommerce_order_itemmeta.';
-		$lines[] = '- Product-category mapping is through wp_term_relationships + wp_term_taxonomy (taxonomy="product_cat").';
-		$lines[] = '- Product meta lookup is in wp_wc_product_meta_lookup (fast aggregated product data).';
-		$lines[] = '- Customer data is in wp_wc_customer_lookup (for analytics).';
-		$lines[] = '- Users table stores registered customers (wp_users).';
+
+		if ( $is_hpos ) {
+			$lines[] = '- Products (post_type="product") are stored in wp_posts. Their meta is in wp_postmeta.';
+			$lines[] = '- Orders are stored in wp_wc_orders. Addresses in wp_wc_order_addresses, operational data in wp_wc_order_operational_data.';
+			$lines[] = '- Order metadata is in wp_wc_orders_meta.';
+			$lines[] = '- Order line items are in wp_woocommerce_order_items and wp_woocommerce_order_itemmeta.';
+			$lines[] = '- Order analytics use wp_wc_order_stats, wp_wc_order_product_lookup, wp_wc_order_tax_lookup, wp_wc_order_coupon_lookup.';
+			$lines[] = '- Product-category mapping is through wp_term_relationships + wp_term_taxonomy (taxonomy="product_cat").';
+			$lines[] = '- Product meta lookup is in wp_wc_product_meta_lookup (fast aggregated product data).';
+			$lines[] = '- Customer data is in wp_wc_customer_lookup (for analytics).';
+			$lines[] = '- Users table stores registered customers (wp_users).';
+		} else {
+			$lines[] = '- Products (post_type="product") are stored in wp_posts. Their meta is in wp_postmeta.';
+			$lines[] = '- Orders (post_type="shop_order") are stored in wp_posts. Their meta is in wp_postmeta.';
+			$lines[] = '- Legacy order items are stored in wp_woocommerce_order_items and wp_woocommerce_order_itemmeta.';
+			$lines[] = '- Product-category mapping is through wp_term_relationships + wp_term_taxonomy (taxonomy="product_cat").';
+			$lines[] = '- Product meta lookup is in wp_wc_product_meta_lookup (fast aggregated product data).';
+			$lines[] = '- Customer data is in wp_wc_customer_lookup (for analytics).';
+			$lines[] = '- Users table stores registered customers (wp_users).';
+		}
 
 		$lines[] = '';
 		$lines[] = '=== RULES ===';
 		$lines[] = '- Always use the table prefix in queries.';
-		$lines[] = '- Use aliases to keep queries readable (e.g., FROM wp_posts AS p).';
-		$lines[] = '- For legacy orders, filter by p.post_type = "shop_order".';
+		if ( $is_hpos ) {
+			$lines[] = '- Use aliases to keep queries readable (e.g., FROM wp_wc_orders AS o).';
+			$lines[] = '- For orders, filter by o.type = "shop_order".';
+		} else {
+			$lines[] = '- Use aliases to keep queries readable (e.g., FROM wp_posts AS p).';
+			$lines[] = '- For orders, filter by p.post_type = "shop_order".';
+		}
 		$lines[] = '- For products, filter by p.post_type = "product".';
 		$lines[] = '- Order status column value is "wc-pending", "wc-processing", "wc-completed" etc.';
 		$lines[] = '- Use COALESCE for meta values that may be NULL.';
