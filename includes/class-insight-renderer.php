@@ -20,11 +20,20 @@ class SILC_WIA_Insight_Renderer {
 	/**
 	 * Prepare chart data by validating and completing the Chart.js config.
 	 *
-	 * @param array $data   Raw result rows from the SQL query.
-	 * @param array $config Chart configuration from AI response.
-	 * @return array Validated chart config.
-	 */
-	public static function prepare_chart_data( array $data, array $config ): array {
+	 * Supports three modes in order of priority:
+	 * 1. AI pre-computed labels/datasets → return as-is (legacy)
+	 * 2. AI transform config → reshape flat SQL rows into multi-dataset Chart.js format
+	 * 3. Fallback → auto-build from raw rows using heuristics
+	 *
+	/**
+	 * Prepare chart data by validating and completing the Chart.js config.
+	 *
+	 * The AI provides a "transform" config describing how to reshape flat SQL
+	 * result rows into Chart.js multi-dataset format. The AI never provides
+	 * actual data values — it only knows the schema.
+	 *
+	 * If no transform is provided, auto-builds from actual SQL data using heuristics.
+	 *
 		// Ensure we have labels and datasets.
 		if ( empty( $data ) ) {
 			return array(
@@ -35,21 +44,251 @@ class SILC_WIA_Insight_Renderer {
 				'empty'      => true,
 			);
 		}
+		// AI only knows the schema, never actual row data. It provides a "transform" config
+		// telling the server how to reshape flat SQL results into Chart.js format.
+		// If no transform is provided, fall through to auto-build from the real data.
 
-		// If config already has pre-computed labels/datasets from AI, validate and return.
-		if ( ! empty( $config['labels'] ) && ! empty( $config['datasets'] ) ) {
-			return array(
-				'chart_type' => $config['chart_type'] ?? 'bar',
-				'title'      => $config['title'] ?? '',
-				'labels'     => $config['labels'],
-				'datasets'   => $config['datasets'],
-				'x_label'    => $config['x_label'] ?? '',
-				'y_label'    => $config['y_label'] ?? '',
+		// Priority 2: Transform config — reshape flat SQL rows into multi-dataset Chart.js format.
+		if ( ! empty( $config['transform'] ) ) {
+			$transformed = self::transform_chart_data( $data, $config );
+			if ( null !== $transformed ) {
+				return $transformed;
+			}
+		}
+
+		// Priority 3: Fallback — auto-build chart from raw rows using heuristics.
+		return self::auto_build_chart( $data, $config );
+	}
+
+	/**
+	/**
+	 * Transform flat SQL result rows into Chart.js multi-dataset format
+	 * using a config-driven transform definition from the AI.
+	 *
+	 * The transform tells PHP how to reshape data, avoiding the need for
+	 *
+	 * Supported transform types:
+	 *
+	 * --- group_split ---
+	 * Splits rows by a "group_by" column to create separate datasets.
+	 * Ideal for time-series comparisons: "monthly revenue per year".
+	 *
+	 * Input rows (flat):
+	 *   year | month | revenue
+	 *   2022 | 1     | 5000
+	 *   2022 | 2     | 4800
+	 *   2023 | 1     | 6200
+	 *   2023 | 2     | 5900
+	 *
+	 * Transform config:
+	 *   {
+	 *     "type": "group_split",
+	 *     "group_by": "year",
+	 *     "x_axis": "month",
+	 *     "value_column": "revenue",
+	 *     "x_labels": ["Jan","Feb","Mar",...]
+	 *   }
+	 *
+	 * Output datasets:
+	 *   [
+	 *     { label: "2022", data: [5000, 4800] },
+	 *     { label: "2023", data: [6200, 5900] }
+	 *   ]
+	 *
+	 * --- columns_to_datasets ---
+	 * Treats each numeric column as a separate dataset, using a label column
+	 * for x-axis. Ideal for: "total sales, refunds, and net revenue by month".
+	 *
+	 * Transform config:
+	 *   {
+	 *     "type": "columns_to_datasets",
+	 *     "label_column": "month",
+	 *     "value_columns": ["total_sales", "refunds", "net_revenue"]
+	 *   }
+	 *
+	 * @param array $data   Flat SQL result rows.
+	 * @param array $config Chart config containing the transform definition.
+	 * @return array|null Chart.js config array, or null if transform failed.
+	 */
+	public static function transform_chart_data( array $data, array $config ): ?array {
+		$transform = $config['transform'];
+		$type      = $transform['type'] ?? '';
+
+		if ( 'group_split' === $type ) {
+			return self::transform_group_split( $data, $config, $transform );
+		}
+
+		if ( 'columns_to_datasets' === $type ) {
+			return self::transform_columns_to_datasets( $data, $config, $transform );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Transform flat data using the "group_split" strategy.
+	 *
+	 * Groups rows by a column value (e.g. year), creating one dataset per group.
+	 *
+	 * @param array $data      Flat SQL result rows.
+	 * @param array $config    Original chart config.
+	 * @param array $transform The transform definition.
+	 * @return array Chart.js config.
+	 */
+	private static function transform_group_split( array $data, array $config, array $transform ): array {
+		$group_by     = $transform['group_by'] ?? '';
+		$x_axis       = $transform['x_axis'] ?? '';
+		$value_column = $transform['value_column'] ?? '';
+		$x_labels     = $transform['x_labels'] ?? array();
+
+		if ( empty( $group_by ) || empty( $x_axis ) || empty( $value_column ) ) {
+			return self::auto_build_chart( $data, $config );
+		}
+
+		// Group rows by the group_by column value.
+		$groups = array();
+		$all_x  = array();
+
+		foreach ( $data as $row ) {
+			$group_key = (string) ( $row[ $group_by ] ?? '' );
+			$x_value   = (string) ( $row[ $x_axis ] ?? '' );
+
+			if ( '' === $group_key || '' === $x_value ) {
+				continue;
+			}
+
+			if ( ! isset( $groups[ $group_key ] ) ) {
+				$groups[ $group_key ] = array();
+			}
+			$groups[ $group_key ][ $x_value ] = isset( $row[ $value_column ] ) ? floatval( $row[ $value_column ] ) : 0;
+			$all_x[ $x_value ] = true;
+		}
+
+		if ( empty( $groups ) || empty( $all_x ) ) {
+			return self::auto_build_chart( $data, $config );
+		}
+
+		// Build sorted x-axis labels.
+		if ( ! empty( $x_labels ) ) {
+			// Use AI-provided labels (e.g. month names).
+			$labels = $x_labels;
+		} else {
+			// Auto-sort numerically or alphabetically.
+			$labels = array_keys( $all_x );
+			if ( ctype_digit( implode( '', $labels ) ) ) {
+				sort( $labels, SORT_NUMERIC );
+			} else {
+				sort( $labels, SORT_STRING );
+			}
+		}
+
+		// Build datasets, one per group.
+		$datasets = array();
+		$idx      = 0;
+
+		// Sort group keys for consistent output.
+		$group_keys = array_keys( $groups );
+		if ( ctype_digit( implode( '', $group_keys ) ) ) {
+			sort( $group_keys, SORT_NUMERIC );
+		} else {
+			sort( $group_keys, SORT_STRING );
+		}
+
+		foreach ( $group_keys as $group_key ) {
+			$group_data = $groups[ $group_key ];
+			$values     = array();
+
+			foreach ( $labels as $label ) {
+				$values[] = $group_data[ $label ] ?? 0;
+			}
+
+			$datasets[] = array(
+				'label'           => (string) $group_key,
+				'data'            => $values,
+				'backgroundColor' => self::get_chart_color( $idx ),
+				'borderColor'     => self::get_chart_color( $idx ),
+				'borderWidth'     => 1,
+				'fill'            => false,
+				'tension'         => 0.1,
+			);
+
+			$idx++;
+		}
+
+		return array(
+			'chart_type' => $config['chart_type'] ?? 'line',
+			'title'      => $config['title'] ?? '',
+			'labels'     => $labels,
+			'datasets'   => $datasets,
+			'x_label'    => $config['x_label'] ?? $x_axis,
+			'y_label'    => $config['y_label'] ?? $value_column,
+		);
+	}
+
+	/**
+	 * Transform flat data using the "columns_to_datasets" strategy.
+	 *
+	 * Treats each numeric column as a separate dataset, using a label column
+	 * for x-axis. Ideal for multi-metric comparisons like "sales and refunds per month".
+	 *
+	 * @param array $data      Flat SQL result rows.
+	 * @param array $config    Original chart config.
+	 * @param array $transform The transform definition.
+	 * @return array Chart.js config.
+	 */
+	private static function transform_columns_to_datasets( array $data, array $config, array $transform ): array {
+		$label_column  = $transform['label_column'] ?? '';
+		$value_columns = $transform['value_columns'] ?? array();
+
+		if ( empty( $label_column ) || empty( $value_columns ) ) {
+			return self::auto_build_chart( $data, $config );
+		}
+
+		// Build labels from the label column.
+		$labels = array();
+		$values = array();
+
+		// Initialize value arrays.
+		foreach ( $value_columns as $vc ) {
+			$values[ $vc ] = array();
+		}
+
+		foreach ( $data as $row ) {
+			$label_val = (string) ( $row[ $label_column ] ?? '' );
+			if ( '' === $label_val ) {
+				continue;
+			}
+			$labels[] = $label_val;
+
+			foreach ( $value_columns as $vc ) {
+				$values[ $vc ][] = isset( $row[ $vc ] ) ? floatval( $row[ $vc ] ) : 0;
+			}
+		}
+
+		if ( empty( $labels ) ) {
+			return self::auto_build_chart( $data, $config );
+		}
+
+		// Build datasets.
+		$datasets = array();
+		foreach ( $value_columns as $idx => $vc ) {
+			$datasets[] = array(
+				'label'           => $vc,
+				'data'            => $values[ $vc ],
+				'backgroundColor' => self::get_chart_color( $idx ),
+				'borderColor'     => self::get_chart_color( $idx ),
+				'borderWidth'     => 1,
 			);
 		}
 
-		// Fallback: auto-build chart data from raw rows.
-		return self::auto_build_chart( $data, $config );
+		return array(
+			'chart_type' => $config['chart_type'] ?? 'bar',
+			'title'      => $config['title'] ?? '',
+			'labels'     => $labels,
+			'datasets'   => $datasets,
+			'x_label'    => $config['x_label'] ?? $label_column,
+			'y_label'    => $config['y_label'] ?? '',
+		);
 	}
 
 	/**

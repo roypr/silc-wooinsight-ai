@@ -180,9 +180,9 @@ class SILC_WIA_API {
 			// OpenAI reasoning models use max_completion_tokens.
 			// Some API providers still accept max_tokens.
 			$effective_max = self::get_effective_max_tokens( $model, $max_tokens );
-			$body['max_completion_tokens'] = $effective_max;
+			$body['max_completion_tokens'] = 16000; // $effective_max;
 		} else {
-			$body['max_tokens']  = $max_tokens;
+			$body['max_tokens']  = 16000; // $max_tokens;
 			$body['temperature'] = $temperature;
 		}
 
@@ -465,7 +465,7 @@ class SILC_WIA_API {
 		}
 
 		$content = self::extract_content( $result['data'] );
-		error_log( '[SILC_WIA] Insight Response: ' . substr( $content, 0, 500 ) );
+		error_log( '[SILC_WIA] Insight Response: ' . $content );
 
 		if ( empty( $content ) ) {
 			return array(
@@ -483,12 +483,11 @@ class SILC_WIA_API {
 			// including reasoning_content if the API returned it.
 			$retry_body            = $body;
 			$assistant_msg         = self::build_assistant_retry_message( $result['data'] );
-			$retry_body['messages'][] = $assistant_msg;
 			$retry_body['messages'][] = array(
 				'role'    => 'user',
 				'content' => 'Your previous response was not valid JSON. Return ONLY valid JSON with no markdown, no explanation, just the JSON object.',
 			);
-
+			$retry = self::send_request( $retry_body );
 			$retry = self::send_request( $retry_body );
 			if ( $retry['success'] ) {
 				$retry_content = self::extract_content( $retry['data'] );
@@ -514,32 +513,39 @@ class SILC_WIA_API {
 	}
 
 	/**
+	/**
 	 * Build the system prompt for insight generation (structured JSON output).
 	 *
 	 * @return string
 	 */
 	private static function build_insight_system_prompt(): string {
-		return 'You are a WooCommerce data analyst. Given a database schema and a user question, '
-			. 'you must return ONLY valid JSON (no other text, no markdown) with this structure:'
+		return 'You are a WooCommerce SQL query generator. You ONLY receive a database schema (table names, column names, column types, relationships).'
+			. ' You NEVER see any actual database row data.'
+			. "\n\nYour job:"
+			. "\n1. Write a correct SQL SELECT query for the user's question"
+			. "\n2. Tell the display system how to present the results (chart, list, or answer)"
+			. "\n"
+			. "\nYou MUST return ONLY valid JSON (no other text, no markdown) with this structure:"
 			. "\n\n"
 			. '{'
 			. "\n  \"sql\": \"The SQL SELECT query to execute\","
 			. "\n  \"type\": \"chart\" | \"list\" | \"answer\","
 			. "\n  \"chart_config\": {"
-			. "\n    \"chart_type\": \"bar\" | \"line\" | \"pie\" | \"horizontalBar\" | \"doughnut\","
+			. "\n    \"chart_type\": \"bar\" | \"line\" | \"pie\" | \"horizontalBar\" | \"doughnut\" | \"radar\" | \"polarArea\","
 			. "\n    \"title\": \"Chart title\","
-			. "\n    \"labels\": [\"array of label strings\"],"
-			. "\n    \"datasets\": ["
-			. "\n      {"
-			. "\n        \"label\": \"Dataset label\","
-			. "\n        \"data\": [numeric values],"
-			. "\n        \"backgroundColor\": [\"optional color array\"]"
-			. "\n      }"
-			. "\n    ],"
+			. "\n    \"transform\": {"
+			. "\n      \"type\": \"group_split\" | \"columns_to_datasets\","
+			. "\n      \"group_by\": \"column name to split datasets by (for group_split)\","
+			. "\n      \"x_axis\": \"column name for x-axis labels (for group_split)\","
+			. "\n      \"value_column\": \"column name for y-axis values (for group_split)\","
+			. "\n      \"x_labels\": [\"optional ordered label strings, e.g. \\\"Jan\\\",\\\"Feb\\\"..\"],"
+			. "\n      \"label_column\": \"column name for x-axis labels (for columns_to_datasets)\","
+			. "\n      \"value_columns\": [\"array of numeric column names to chart (for columns_to_datasets)\"]"
+			. "\n    },"
 			. "\n    \"x_label\": \"X-axis label (optional)\","
 			. "\n    \"y_label\": \"Y-axis label (optional)\""
 			. "\n  },"
-			. "\n  \"answer_text\": \"Human-readable answer text, e.g. 'Total orders last week: 247'\","
+			. "\n  \"answer_text\": \"Template for the answer text. Use {{column_name}} placeholders that will be replaced with actual values, e.g. 'Total orders last week: {{total_orders}}'\","
 			. "\n  \"list_config\": {"
 			. "\n    \"title_column\": \"Column name to use as the primary display text\","
 			. "\n    \"link_columns\": {"
@@ -553,25 +559,31 @@ class SILC_WIA_API {
 			. "\n    }"
 			. "\n  }"
 			. "\n}"
-			. "\n\nRULES:"
+			. "\n\nCRITICAL — You have NO access to actual data:"
+			. "\n- You only know column names and types from the schema. You do NOT know what values exist in the database."
+			. "\n- NEVER include \"labels\" or \"datasets\" arrays in chart_config — you cannot know the actual values."
+			. "\n- For charts, ALWAYS use the \"transform\" object to tell the server how to reshape flat SQL results into Chart.js format."
+			. "\n- The SQL you write WILL be executed against the real database. The server will use the real result rows."
+			. "\n"
+			. "\nChart transform examples (use these, not pre-computed values):"
+			. "\n  group_split: SQL returns columns like year, month, revenue. Transform tells server: group_by=\"year\","
+			. "\n    x_axis=\"month\", value_column=\"revenue\", x_labels=[\"Jan\",\"Feb\",...]. The server splits rows by year"
+			. "\n    into separate datasets, using month as x-axis labels."
+			. "\n  columns_to_datasets: SQL returns columns like month, total_sales, refunds. Transform tells server:"
+			. "\n    label_column=\"month\", value_columns=[\"total_sales\",\"refunds\"]. Each value column becomes a dataset."
+			. "\n"
+			. "\nType selection rules:"
 			. "\n- type=\"chart\" when question asks for comparison, trend, distribution, or visualization"
-			. "\n- type=\"list\" when question asks for \"list\", \"show me\", \"who are\", \"which customers\", \"pending orders\", \"top products\""
+			. "\n- type=\"list\" when question asks for list, show me, who are, which customers, pending orders, top products"
 			. "\n- type=\"answer\" when question asks for count, total, average, or a single numeric answer"
-			. "\n- For chart type, pre-compute labels and datasets in chart_config (do NOT return raw data)"
-			. "\n- For list type, include link_columns mapping so the UI can generate admin links"
-			. "\n\nLINK COLUMN MAPPING RULES (CRITICAL):"
-			. "\n- Column \"order_id\" → link_type \"order\""
-			. "\n- Column \"parent_order_id\" → link_type \"order\""
-			. "\n- Column \"product_id\" → link_type \"product\""
-			. "\n- Column \"variation_id\" → link_type \"product\""
-			. "\n- Column \"customer_id\" → link_type \"user\""
-			. "\n- Column \"user_id\" → link_type \"user\""
-			. "\n- Column \"coupon_id\" → link_type \"coupon\""
-			. "\n- Column \"order_item_id\" → link_type \"order_item\""
-			. "\n\n- For answer type, provide a complete sentence in answer_text"
-			. "\n- Use COALESCE for potentially NULL numeric values"
-			. "\n- Always use proper date functions for time-based queries"
-			. "\n- Format currency values as plain numbers (frontend will add currency symbol)";
+			. "\n"
+			. "\nOther rules:"
+			. "\n- Use COALESCE for potentially NULL numeric columns"
+			. "\n- Use proper MySQL date functions for time-based queries"
+			. "\n- Format currency as plain numbers (frontend adds currency symbol)"
+			. "\n- For list type, include link_columns mapping (order_id→order, product_id→product, customer_id/user_id→user, coupon_id→coupon)"
+			. "\n- DO NOT include markdown code fences around the JSON"
+			. "\n- For answer type, provide answer_text with {{column_name}} placeholders";
 	}
 
 	/**
@@ -593,6 +605,11 @@ class SILC_WIA_API {
 	 *
 	 * Strategy chain:
 	 * 1. Direct JSON decode
+	 * 2. Strip markdown fences, then decode
+	 * 3. Regex extraction of JSON block
+	 *
+	public static function parse_insight_json( string $raw_response ): ?array {
+		// Strategy 1: Direct JSON decode.
 	 * 2. Strip markdown fences, then decode
 	 * 3. Regex extraction of JSON block
 	 *
