@@ -25,15 +25,17 @@ class SILC_WIA_Insight_Renderer {
 	 * 2. AI transform config → reshape flat SQL rows into multi-dataset Chart.js format
 	 * 3. Fallback → auto-build from raw rows using heuristics
 	 *
-	/**
-	 * Prepare chart data by validating and completing the Chart.js config.
-	 *
 	 * The AI provides a "transform" config describing how to reshape flat SQL
 	 * result rows into Chart.js multi-dataset format. The AI never provides
 	 * actual data values — it only knows the schema.
 	 *
 	 * If no transform is provided, auto-builds from actual SQL data using heuristics.
 	 *
+	 * @param array $data   Raw SQL result rows.
+	 * @param array $config Chart configuration array.
+	 * @return array Complete Chart.js config.
+	 */
+	public static function prepare_chart_data( array $data, array $config ): array {
 		// Ensure we have labels and datasets.
 		if ( empty( $data ) ) {
 			return array(
@@ -61,11 +63,11 @@ class SILC_WIA_Insight_Renderer {
 	}
 
 	/**
-	/**
 	 * Transform flat SQL result rows into Chart.js multi-dataset format
 	 * using a config-driven transform definition from the AI.
 	 *
 	 * The transform tells PHP how to reshape data, avoiding the need for
+	 * sending actual row data to the AI.
 	 *
 	 * Supported transform types:
 	 *

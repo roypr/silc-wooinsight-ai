@@ -488,7 +488,6 @@ class SILC_WIA_API {
 				'content' => 'Your previous response was not valid JSON. Return ONLY valid JSON with no markdown, no explanation, just the JSON object.',
 			);
 			$retry = self::send_request( $retry_body );
-			$retry = self::send_request( $retry_body );
 			if ( $retry['success'] ) {
 				$retry_content = self::extract_content( $retry['data'] );
 				if ( ! empty( $retry_content ) ) {
@@ -512,7 +511,6 @@ class SILC_WIA_API {
 		);
 	}
 
-	/**
 	/**
 	 * Build the system prompt for insight generation (structured JSON output).
 	 *
