@@ -6,6 +6,9 @@
  * relationships, post types, and meta keys. Used for AI prompt context
  * and SQL validation (whitelisting).
  *
+ * Attempts dynamic schema discovery first (SHOW COLUMNS) and falls back
+ * to a hardcoded reference when the table doesn't exist yet.
+ *
  * @package SILC_WooInsight_AI
  */
 
@@ -17,6 +20,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  * WooCommerce schema class.
  */
 class SILC_WIA_Woo_Schema {
+
+	/**
+	 * Cache group for dynamic schema.
+	 */
+	const CACHE_GROUP = 'silc_wia_schema';
 
 	/**
 	 * Get the WordPress table prefix.
@@ -112,58 +120,79 @@ class SILC_WIA_Woo_Schema {
 			'wc_rate_limits',
 			'wc_webhooks',
 			'wc_product_download_directories',
+			'woocommerce_order_items',
+			'woocommerce_order_itemmeta',
 			// Users / customers.
 			'users',
 			'usermeta',
 		);
 	}
 
+	// ----------------------------------------------------------------------- //
+	//  DYNAMIC SCHEMA DISCOVERY
+	// ----------------------------------------------------------------------- //
+
 	/**
-	 * Get detailed schema for WooCommerce-relevant tables.
+	 * Discover column names for a table dynamically via SHOW COLUMNS.
 	 *
-	 * When $active_only is true, only tables relevant to the active order
-	 * storage backend are returned (HPOS tables excluded in legacy mode).
+	 * @param string $table Table name (without prefix).
+	 * @return array|null Array of column names, or null if table doesn't exist.
+	 */
+	private static function discover_columns( string $table ): ?array {
+		global $wpdb;
+
+		$prefixed = $wpdb->prefix . $table;
+		$cache_key = 'cols_' . $prefixed;
+		$cached = wp_cache_get( $cache_key, self::CACHE_GROUP );
+		if ( false !== $cached ) {
+			return $cached;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$columns = $wpdb->get_results( "SHOW COLUMNS FROM `{$prefixed}`", ARRAY_A );
+		if ( empty( $columns ) ) {
+			wp_cache_set( $cache_key, null, self::CACHE_GROUP, 300 );
+			return null;
+		}
+
+		$names = array_column( $columns, 'Field' );
+		wp_cache_set( $cache_key, $names, self::CACHE_GROUP, 300 );
+		return $names;
+	}
+
+	// ----------------------------------------------------------------------- //
+	//  HARDCODED FALLBACK SCHEMAS
+	// ----------------------------------------------------------------------- //
+
+	/**
+	 * Hardcoded fallback schemas for tables that may not exist yet.
 	 *
-	 * @param bool $active_only Whether to return only the active backend's schemas.
+	 * These are verified against the actual WooCommerce DB schema (from wp69.sql)
+	 * and act as accurate reference when dynamic discovery is unavailable.
+	 *
 	 * @return array<string, array>  Table name (without prefix) => columns.
 	 */
-	public static function get_table_schemas( bool $active_only = false ): array {
-		$schemas = array(
+	private static function get_fallback_schemas(): array {
+		return array(
 			// ---- ORDERS (HPOS) ---- //
 			'wc_orders' => array(
 				'id',
 				'status',
-				'type',
 				'currency',
+				'type',
+				'tax_amount',
+				'total_amount',
+				'customer_id',
+				'billing_email',
 				'date_created_gmt',
 				'date_updated_gmt',
 				'parent_order_id',
-				'customer_id',
-				'billing_email',
-				'total_amount',
-				'total_tax_amount',
-				'total_shipping_amount',
-				'total_discount_amount',
-				'total_fee_amount',
-				'total_refunded_amount',
 				'payment_method',
 				'payment_method_title',
 				'transaction_id',
-				'customer_ip_address',
-				'customer_user_agent',
-				'created_via',
+				'ip_address',
+				'user_agent',
 				'customer_note',
-				'order_key',
-				'discount_tax_amount',
-				'shipping_tax_amount',
-				'prices_include_tax',
-				'order_version',
-				'recorded_sales',
-				'recorded_coupon_usage_counts',
-				'date_paid_gmt',
-				'date_completed_gmt',
-				'shipping_total',
-				'coupon_total',
 			),
 			'wc_order_addresses' => array(
 				'id',
@@ -199,6 +228,7 @@ class SILC_WIA_Woo_Schema {
 				'shipping_total_amount',
 				'discount_tax_amount',
 				'discount_total_amount',
+				'recorded_sales',
 			),
 			'wc_orders_meta' => array(
 				'id',
@@ -316,8 +346,7 @@ class SILC_WIA_Woo_Schema {
 				'coupon_amount',
 				'tax_amount',
 				'shipping_amount',
-				'product_name',
-				'product_type',
+				'shipping_tax_amount',
 			),
 			'wc_order_tax_lookup' => array(
 				'order_id',
@@ -340,16 +369,26 @@ class SILC_WIA_Woo_Schema {
 				'first_name',
 				'last_name',
 				'email',
-				'city',
-				'state',
-				'postcode',
-				'country',
 				'date_last_active',
 				'date_registered',
 				'country',
 				'postcode',
 				'city',
 				'state',
+			),
+
+			// ---- LEGACY ORDER TABLES ---- //
+			'woocommerce_order_items' => array(
+				'order_item_id',
+				'order_item_name',
+				'order_item_type',
+				'order_id',
+			),
+			'woocommerce_order_itemmeta' => array(
+				'meta_id',
+				'order_item_id',
+				'meta_key',
+				'meta_value',
 			),
 
 			// ---- USERS ---- //
@@ -364,8 +403,6 @@ class SILC_WIA_Woo_Schema {
 				'user_activation_key',
 				'user_status',
 				'display_name',
-				'spam',
-				'deleted',
 			),
 			'usermeta' => array(
 				'umeta_id',
@@ -374,6 +411,28 @@ class SILC_WIA_Woo_Schema {
 				'meta_value',
 			),
 		);
+	}
+
+	/**
+	 * Get detailed schema for WooCommerce-relevant tables.
+	 *
+	 * Uses dynamic discovery (SHOW COLUMNS) when the table exists, and falls
+	 * back to a hardcoded reference otherwise. Results are cached.
+	 *
+	 * When $active_only is true, only tables relevant to the active order
+	 * storage backend are returned (HPOS tables excluded in legacy mode).
+	 *
+	 * @param bool $active_only Whether to return only the active backend's schemas.
+	 * @return array<string, array>  Table name (without prefix) => columns.
+	 */
+	public static function get_table_schemas( bool $active_only = false ): array {
+		$fallback = self::get_fallback_schemas();
+		$schemas  = array();
+
+		foreach ( $fallback as $table => $default_cols ) {
+			$dynamic = self::discover_columns( $table );
+			$schemas[ $table ] = null !== $dynamic ? $dynamic : $default_cols;
+		}
 
 		if ( $active_only && ! self::is_hpos_enabled() ) {
 			foreach ( self::get_hpos_table_names() as $hpos_table ) {
@@ -382,6 +441,28 @@ class SILC_WIA_Woo_Schema {
 		}
 
 		return $schemas;
+	}
+
+	/**
+	 * Discover column names for a specific table, returning cached result.
+	 *
+	 * @param string $table Table name (without prefix).
+	 * @return array|null
+	 */
+	public static function get_table_columns( string $table ): ?array {
+		$schemas = self::get_table_schemas();
+		return $schemas[ $table ] ?? null;
+	}
+
+	/**
+	 * Invalidate the dynamic schema cache.
+	 */
+	public static function clear_cache(): void {
+		global $wpdb;
+		$tables = self::get_table_names();
+		foreach ( $tables as $table ) {
+			wp_cache_delete( 'cols_' . $wpdb->prefix . $table, self::CACHE_GROUP );
+		}
 	}
 
 	// ----------------------------------------------------------------------- //
@@ -566,6 +647,9 @@ class SILC_WIA_Woo_Schema {
 	 * order storage backend (HPOS or legacy). This prevents the AI from seeing
 	 * tables and rules that don't apply to the current site.
 	 *
+	 * Both generate_sql() and generate_insight() in class-api.php use this
+	 * method, ensuring a single source of truth for schema context.
+	 *
 	 * @return string
 	 */
 	public static function get_schema_context(): string {
@@ -655,25 +739,5 @@ class SILC_WIA_Woo_Schema {
 		$lines[] = '- Prefer wp_wc_order_stats for high-level order analytics.';
 
 		return implode( "\n", $lines );
-	}
-
-	/**
-	 * Get the prompt template sent to the AI model.
-	 *
-	 * @param string $user_question The user's natural language question.
-	 * @return string
-	 */
-	public static function build_prompt( string $user_question ): string {
-		$schema = self::get_schema_context();
-
-		return <<<PROMPT
-You are a WooCommerce SQL expert. Given a database schema below, convert the user's question into a valid MySQL query.
-
-{$schema}
-
-USER QUESTION: {$user_question}
-
-Generate ONLY the SQL query, no explanations, no markdown formatting. The query must be a single SELECT statement. Use the table prefix as provided.
-PROMPT;
 	}
 }

@@ -50,7 +50,6 @@ class SILC_WIA_Admin {
 	 * Register admin menu pages under WooCommerce.
 	 */
 	public static function add_menu_pages(): void {
-		// Main dashboard page.
 		self::$page_hook = add_submenu_page(
 			'woocommerce',
 			__( 'WooInsight AI', 'silc-wooinsight-ai' ),
@@ -60,7 +59,6 @@ class SILC_WIA_Admin {
 			array( __CLASS__, 'render_page' )
 		);
 
-		// Settings page.
 		self::$settings_hook = add_submenu_page(
 			'woocommerce',
 			__( 'WooInsight AI Settings', 'silc-wooinsight-ai' ),
@@ -90,7 +88,6 @@ class SILC_WIA_Admin {
 			)
 		);
 
-		// API URL field.
 		add_settings_section(
 			'silc_wia_api_section',
 			__( 'AI Provider Settings', 'silc-wooinsight-ai' ),
@@ -153,7 +150,6 @@ class SILC_WIA_Admin {
 			? esc_url_raw( untrailingslashit( trim( $input['api_url'] ) ) )
 			: SILC_WIA_API::DEFAULT_API_URL;
 
-		// Preserve existing key if the field was left empty (user wants to keep it).
 		if ( ! empty( $input['api_key'] ) ) {
 			$output['api_key'] = sanitize_text_field( $input['api_key'] );
 		} elseif ( isset( $current['api_key'] ) ) {
@@ -243,7 +239,8 @@ class SILC_WIA_Admin {
 			placeholder="gpt-4o-mini"
 		/>
 		<p class="description">
-			<?php esc_html_e( 'Model name to use (e.g. gpt-4o-mini, gpt-4o, claude-3-haiku, llama3, etc.).', 'silc-wooinsight-ai' ); ?>
+			<?php esc_html_e( 'Model name to use (e.g. gpt-4o-mini, gpt-4o, claude-3-haiku, llama3, deepseek-r1, etc.).', 'silc-wooinsight-ai' ); ?>
+			<?php esc_html_e( 'Reasoning models (o1, o3, deepseek-r1) are auto-detected and handled with larger token budgets.', 'silc-wooinsight-ai' ); ?>
 		</p>
 		<?php
 	}
@@ -254,15 +251,20 @@ class SILC_WIA_Admin {
 	public static function render_field_max_tokens(): void {
 		$settings = SILC_WIA_API::get_settings();
 		$value    = $settings['max_tokens'] ?? SILC_WIA_API::DEFAULT_MAX_TOKENS;
+		$model    = $settings['model'] ?? '';
+		$is_reason = SILC_WIA_API::is_reasoning_model( $model );
+		$extra_note = $is_reason
+			? __( 'Reasoning model — uses max_completion_tokens internally (min 4000 for reasoning overhead).', 'silc-wooinsight-ai' )
+			: __( 'Insight mode internally overrides to 1500 for JSON output capacity.', 'silc-wooinsight-ai' );
 		?>
 		<input type="number"
 			name="<?php echo esc_attr( self::SETTINGS_OPTION ); ?>[max_tokens]"
 			value="<?php echo esc_attr( $value ); ?>"
 			class="small-text"
-			min="50" max="4096" step="50"
+			min="50" max="8192" step="50"
 		/>
 		<p class="description">
-			<?php esc_html_e( 'Maximum tokens in the response (50–8192). Insight mode internally overrides to 1500.', 'silc-wooinsight-ai' ); ?>
+			<?php echo esc_html( sprintf( __( 'Maximum tokens (50–8192). %s', 'silc-wooinsight-ai' ), $extra_note ) ); ?>
 		</p>
 		<?php
 	}
@@ -273,15 +275,22 @@ class SILC_WIA_Admin {
 	public static function render_field_temperature(): void {
 		$settings = SILC_WIA_API::get_settings();
 		$value    = $settings['temperature'] ?? SILC_WIA_API::DEFAULT_TEMPERATURE;
+		$model    = $settings['model'] ?? '';
+		$is_reason = SILC_WIA_API::is_reasoning_model( $model );
+		$disabled_attr = $is_reason ? 'disabled' : '';
+		$extra_note = $is_reason
+			? __( 'Temperature is not supported by reasoning models and will be ignored.', 'silc-wooinsight-ai' )
+			: __( 'Controls randomness (0 = deterministic, 2 = very random). 0.1–0.3 recommended for SQL generation.', 'silc-wooinsight-ai' );
 		?>
 		<input type="number"
 			name="<?php echo esc_attr( self::SETTINGS_OPTION ); ?>[temperature]"
 			value="<?php echo esc_attr( $value ); ?>"
 			class="small-text"
 			min="0" max="2" step="0.1"
+			<?php echo $disabled_attr; ?>
 		/>
 		<p class="description">
-			<?php esc_html_e( 'Controls randomness (0 = deterministic, 2 = very random). 0.1–0.3 recommended for SQL generation.', 'silc-wooinsight-ai' ); ?>
+			<?php echo esc_html( $extra_note ); ?>
 		</p>
 		<?php
 	}
@@ -410,7 +419,6 @@ class SILC_WIA_Admin {
 	 */
 	public static function enqueue_assets( string $hook ): void {
 		if ( $hook === self::$settings_hook ) {
-			// Settings page uses standard WP admin styles.
 			return;
 		}
 
@@ -418,7 +426,6 @@ class SILC_WIA_Admin {
 			return;
 		}
 
-		// Use WordPress built-in React (via @wordpress/element) and components.
 		wp_enqueue_script( 'wp-element' );
 		wp_enqueue_script( 'wp-components' );
 		wp_enqueue_script( 'wp-i18n' );
@@ -426,10 +433,8 @@ class SILC_WIA_Admin {
 		wp_enqueue_script( 'wp-hooks' );
 		wp_enqueue_script( 'wp-html-entities' );
 
-		// Enqueue WordPress component styles.
 		wp_enqueue_style( 'wp-components' );
 
-		// Enqueue Chart.js library.
 		$chartjs_file = SILC_WIA_PATH . 'assets/lib/chart.min.js';
 		if ( file_exists( $chartjs_file ) ) {
 			wp_enqueue_script(
@@ -441,7 +446,6 @@ class SILC_WIA_Admin {
 			);
 		}
 
-		// Enqueue Chart renderer (depends on Chart.js).
 		wp_enqueue_script(
 			'silc-wia-chart-renderer',
 			SILC_WIA_URL . 'assets/js/chart-renderer.js',
@@ -450,7 +454,6 @@ class SILC_WIA_Admin {
 			true
 		);
 
-		// Enqueue our dashboard script.
 		$asset_file = SILC_WIA_PATH . 'assets/js/dashboard.asset.php';
 		$deps       = array( 'wp-element', 'wp-components', 'wp-i18n', 'wp-api-fetch', 'wp-hooks', 'wp-html-entities', 'silc-wia-chart-renderer' );
 		$version    = SILC_WIA_VERSION;
@@ -471,12 +474,11 @@ class SILC_WIA_Admin {
 			true
 		);
 
-		// Check if API is configured.
 		require_once SILC_WIA_PATH . 'includes/class-api.php';
-		$api_settings = SILC_WIA_API::get_settings();
-		$api_configured = ! empty( $api_settings['api_key'] );
+		$api_settings    = SILC_WIA_API::get_settings();
+		$api_configured  = ! empty( $api_settings['api_key'] );
+		$is_reason_model = SILC_WIA_API::is_reasoning_model( $api_settings['model'] ?? '' );
 
-		// Localize with data.
 		wp_localize_script( 'silc-wia-dashboard', 'silcWiaData', array(
 			'ajaxUrl'        => admin_url( 'admin-ajax.php' ),
 			'nonce'          => wp_create_nonce( SILC_WIA_Ajax::NONCE_ACTION ),
@@ -484,6 +486,7 @@ class SILC_WIA_Admin {
 			'pluginUrl'      => SILC_WIA_URL,
 			'settingsUrl'    => admin_url( 'admin.php?page=silc-wooinsight-ai-settings' ),
 			'apiConfigured'  => $api_configured,
+			'isReasoningModel' => $is_reason_model,
 			'pluginVersion'  => SILC_WIA_VERSION,
 			'l10n'           => array(
 				'askQuestion'      => __( 'Ask a question about your WooCommerce data...', 'silc-wooinsight-ai' ),
@@ -502,7 +505,6 @@ class SILC_WIA_Admin {
 				'settings'         => __( 'Settings', 'silc-wooinsight-ai' ),
 				'usingFallback'    => __( 'Using built-in templates (API not configured)', 'silc-wooinsight-ai' ),
 				'apiReady'         => __( 'AI Ready (API)', 'silc-wooinsight-ai' ),
-				// Insight mode strings.
 				'insights'         => __( 'Insights', 'silc-wooinsight-ai' ),
 				'getInsight'       => __( 'Get Insight', 'silc-wooinsight-ai' ),
 				'generatingInsight' => __( 'Generating insight...', 'silc-wooinsight-ai' ),
@@ -518,7 +520,6 @@ class SILC_WIA_Admin {
 			),
 		) );
 
-		// Enqueue CSS.
 		wp_enqueue_style(
 			'silc-wia-admin',
 			SILC_WIA_URL . 'assets/css/admin.css',

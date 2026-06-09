@@ -5,6 +5,9 @@
  * Handles communication with any OpenAI-compatible API endpoint
  * (OpenAI, Azure, Ollama, LocalAI, vLLM, etc.) for SQL generation.
  *
+ * Supports both standard instruct models and reasoning models (o1, o3,
+ * DeepSeek-R1, etc.) with appropriate parameter handling for each.
+ *
  * @package SILC_WooInsight_AI
  */
 
@@ -31,6 +34,27 @@ class SILC_WIA_API {
 	const INSIGHT_MAX_TOKENS = 1500;
 
 	/**
+	 * Max tokens for reasoning models (need extra budget for reasoning content).
+	 */
+	const REASONING_MAX_TOKENS = 4000;
+
+	/**
+	 * Patterns that identify reasoning models.
+	 */
+	const REASONING_MODEL_PATTERNS = array(
+		'/^o1-/i',
+		'/^o3-/i',
+		'/deepseek-reasoner/i',
+		'/deepseek-r1/i',
+		'/claude-3-opus/i',
+		'/gemini-2\.0-flash-thinking/i',
+	);
+
+	// ----------------------------------------------------------------------- //
+	//  SETTINGS
+	// ----------------------------------------------------------------------- //
+
+	/**
 	 * Get API settings.
 	 *
 	 * @return array
@@ -54,38 +78,135 @@ class SILC_WIA_API {
 	}
 
 	/**
-	 * Generate SQL from a natural language question using the configured API.
+	 * Check if the configured model is a reasoning model.
 	 *
-	 * @param string $question      The user's natural language question.
-	 * @param string $schema_context The database schema context for the prompt.
-	 * @return array{success: bool, sql: string, error: string}
+	 * Reasoning models (o1, o3, DeepSeek-R1, etc.) require different
+	 * parameter handling:
+	 * - No temperature parameter
+	 * - Higher max_tokens budget (reasoning content consumes tokens)
+	 * - System prompts handled differently
+	 *
+	 * @param string $model Model name.
+	 * @return bool
 	 */
-	public static function generate_sql( string $question, string $schema_context ): array {
+	public static function is_reasoning_model( string $model ): bool {
+		foreach ( self::REASONING_MODEL_PATTERNS as $pattern ) {
+			if ( preg_match( $pattern, $model ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Get appropriate max_tokens for a model.
+	 *
+	 * Reasoning models need a larger budget because they output reasoning
+	 * content before the final visible answer. The visible output plus
+	 * reasoning must fit within max_tokens.
+	 *
+	 * @param string $model      Model name.
+	 * @param int    $base_tokens Base token limit for instruct models.
+	 * @return int
+	 */
+	public static function get_effective_max_tokens( string $model, int $base_tokens ): int {
+		if ( self::is_reasoning_model( $model ) ) {
+			return max( $base_tokens, self::REASONING_MAX_TOKENS );
+		}
+		return $base_tokens;
+	}
+
+	/**
+	 * Extract the assistant message content from an API response,
+	 * including reasoning_content if present.
+	 *
+	 * @param array $data Decoded API response.
+	 * @return string The visible content text.
+	 */
+	private static function extract_content( array $data ): string {
+		if ( isset( $data['choices'][0]['message']['content'] ) && is_string( $data['choices'][0]['message']['content'] ) ) {
+			return $data['choices'][0]['message']['content'];
+		}
+		return '';
+	}
+
+	/**
+	 * Build the full assistant message (including reasoning content) for retry.
+	 *
+	 * For reasoning models, the API may include a `reasoning_content` field
+	 * alongside `content`. When retrying, we need to send both back so the
+	 * model has full context of its previous response.
+	 *
+	 * @param array $data Decoded API response from the first attempt.
+	 * @return array Assistant message.
+	 */
+	private static function build_assistant_retry_message( array $data ): array {
+		$message = array(
+			'role'    => 'assistant',
+			'content' => self::extract_content( $data ),
+		);
+
+		// Include reasoning_content if the API returned it (reasoning models).
+		if ( isset( $data['choices'][0]['message']['reasoning_content'] ) ) {
+			$message['reasoning_content'] = $data['choices'][0]['message']['reasoning_content'];
+		}
+
+		return $message;
+	}
+
+	// ----------------------------------------------------------------------- //
+	//  BODY BUILDER
+	// ----------------------------------------------------------------------- //
+
+	/**
+	 * Build the request body for a chat completion call.
+	 *
+	 * Automatically adjusts parameters for reasoning vs instruct models.
+	 *
+	 * @param string $model         Model name.
+	 * @param array  $messages      Message array.
+	 * @param int    $max_tokens    Max tokens for output.
+	 * @param float  $temperature   Temperature (ignored for reasoning models).
+	 * @return array
+	 */
+	private static function build_request_body( string $model, array $messages, int $max_tokens, float $temperature = 0.2 ): array {
+		$body = array(
+			'model'    => $model,
+			'messages' => $messages,
+		);
+
+		// Reasoning models use max_completion_tokens instead of max_tokens.
+		if ( self::is_reasoning_model( $model ) ) {
+			// OpenAI reasoning models use max_completion_tokens.
+			// Some API providers still accept max_tokens.
+			$effective_max = self::get_effective_max_tokens( $model, $max_tokens );
+			$body['max_completion_tokens'] = $effective_max;
+		} else {
+			$body['max_tokens']  = $max_tokens;
+			$body['temperature'] = $temperature;
+		}
+
+		return $body;
+	}
+
+	/**
+	 * Send a chat completion request and return the parsed response.
+	 *
+	 * @param array $body Request body.
+	 * @return array{success: bool, data: array|null, error: string}
+	 */
+	private static function send_request( array $body ): array {
 		$settings = self::get_settings();
 
 		if ( empty( $settings['api_key'] ) ) {
 			return array(
 				'success' => false,
-				'sql'     => '',
+				'data'    => null,
 				'error'   => __( 'API key is not configured. Please go to Settings and add your API key.', 'silc-wooinsight-ai' ),
 			);
 		}
 
 		$api_url = untrailingslashit( $settings['api_url'] );
-
-		// Build the chat completion prompt.
-		$system_prompt = self::build_system_prompt();
-		$user_prompt   = self::build_user_prompt( $question, $schema_context );
-
-		$body = array(
-			'model'       => $settings['model'],
-			'messages'    => array(
-				array( 'role' => 'system', 'content' => $system_prompt ),
-				array( 'role' => 'user',   'content' => $user_prompt ),
-			),
-			'max_tokens'  => (int) $settings['max_tokens'],
-			'temperature' => (float) $settings['temperature'],
-		);
 
 		$response = wp_remote_post(
 			$api_url . '/chat/completions',
@@ -102,7 +223,7 @@ class SILC_WIA_API {
 		if ( is_wp_error( $response ) ) {
 			return array(
 				'success' => false,
-				'sql'     => '',
+				'data'    => null,
 				'error'   => sprintf(
 					/* translators: %s: error message */
 					__( 'API request failed: %s', 'silc-wooinsight-ai' ),
@@ -123,16 +244,75 @@ class SILC_WIA_API {
 			);
 			return array(
 				'success' => false,
-				'sql'     => '',
+				'data'    => null,
 				'error'   => $error_msg,
 			);
 		}
 
-		// Extract the response text.
-		$content = '';
-		if ( isset( $data['choices'][0]['message']['content'] ) ) {
-			$content = $data['choices'][0]['message']['content'];
+		return array(
+			'success' => true,
+			'data'    => $data,
+			'error'   => '',
+		);
+	}
+
+	// ----------------------------------------------------------------------- //
+	//  SQL GENERATION
+	// ----------------------------------------------------------------------- //
+
+	/**
+	 * Generate SQL from a natural language question using the configured API.
+	 *
+	 * Uses get_schema_context() from Woo_Schema for the schema context,
+	 * same as generate_insight(), ensuring a single source of truth.
+	 *
+	 * @param string $question       The user's natural language question.
+	 * @param string $schema_context The database schema context for the prompt.
+	 * @return array{success: bool, sql: string, error: string}
+	 */
+	public static function generate_sql( string $question, string $schema_context ): array {
+		$settings = self::get_settings();
+
+		if ( empty( $settings['api_key'] ) ) {
+			return array(
+				'success' => false,
+				'sql'     => '',
+				'error'   => __( 'API key is not configured. Please go to Settings and add your API key.', 'silc-wooinsight-ai' ),
+			);
 		}
+
+		// Build the chat completion prompt.
+		$system_prompt = self::build_system_prompt();
+		$user_prompt   = self::build_user_prompt( $question, $schema_context );
+
+		$model      = $settings['model'];
+		$is_reason  = self::is_reasoning_model( $model );
+		$max_tokens = self::get_effective_max_tokens( $model, (int) $settings['max_tokens'] );
+
+		if ( $is_reason ) {
+			// Reasoning models don't support system role; fold system prompt into user.
+			$messages = array(
+				array( 'role' => 'user', 'content' => $system_prompt . "\n\n" . $user_prompt ),
+			);
+		} else {
+			$messages = array(
+				array( 'role' => 'system', 'content' => $system_prompt ),
+				array( 'role' => 'user',   'content' => $user_prompt ),
+			);
+		}
+
+		$body = self::build_request_body( $model, $messages, $max_tokens, (float) $settings['temperature'] );
+
+		$result = self::send_request( $body );
+		if ( ! $result['success'] ) {
+			return array(
+				'success' => false,
+				'sql'     => '',
+				'error'   => $result['error'],
+			);
+		}
+
+		$content = self::extract_content( $result['data'] );
 
 		if ( empty( $content ) ) {
 			return array(
@@ -186,12 +366,10 @@ class SILC_WIA_API {
 	 * @return string
 	 */
 	private static function build_user_prompt( string $question, string $schema_context ): string {
-		$prompt = 'Here is the WooCommerce database schema (table prefix included):'
+		return 'Here is the WooCommerce database schema (table prefix included):'
 			. "\n\n" . $schema_context
 			. "\n\nUser question: " . $question
 			. "\n\nGenerate ONLY the SQL query:";
-
-		return $prompt;
 	}
 
 	/**
@@ -235,7 +413,7 @@ class SILC_WIA_API {
 	 * Uses a dedicated prompt that asks the AI to return valid JSON with
 	 * fields: sql, type, chart_config, list_config, answer_text.
 	 *
-	 * Overrides max_tokens to 1500 for JSON output capacity.
+	 * Uses get_schema_context() from Woo_Schema (same as generate_sql()).
 	 *
 	 * @param string $question       The user's natural language question.
 	 * @param string $schema_context The database schema context for the prompt.
@@ -252,68 +430,42 @@ class SILC_WIA_API {
 			);
 		}
 
-		$api_url = untrailingslashit( $settings['api_url'] );
-
 		// Build prompts.
 		$system_prompt = self::build_insight_system_prompt();
 		$user_prompt   = self::build_insight_user_prompt( $question, $schema_context );
 
-		$body = array(
-			'model'       => $settings['model'],
-			'messages'    => array(
+		$model      = $settings['model'];
+		$is_reason  = self::is_reasoning_model( $model );
+		$max_tokens = self::get_effective_max_tokens( $model, self::INSIGHT_MAX_TOKENS );
+
+		if ( $is_reason ) {
+			// Reasoning models: fold system into user message.
+			$messages = array(
+				array( 'role' => 'user', 'content' => $system_prompt . "\n\n" . $user_prompt ),
+			);
+		} else {
+			$messages = array(
 				array( 'role' => 'system', 'content' => $system_prompt ),
 				array( 'role' => 'user',   'content' => $user_prompt ),
-			),
-			'max_tokens'  => self::INSIGHT_MAX_TOKENS,
-			'temperature' => 0.2,
-		);
+			);
+		}
 
-		$response = wp_remote_post(
-			$api_url . '/chat/completions',
-			array(
-				'timeout'   => 600,
-				'headers'   => array(
-					'Authorization' => 'Bearer ' . $settings['api_key'],
-					'Content-Type'  => 'application/json',
-				),
-				'body'      => wp_json_encode( $body ),
-			)
-		);
+		$body = self::build_request_body( $model, $messages, $max_tokens, 0.2 );
 
-		if ( is_wp_error( $response ) ) {
+		// Debug logging.
+		error_log( '[SILC_WIA] Insight Request - Model: ' . $model . ', Reasoning: ' . ( $is_reason ? 'yes' : 'no' ) );
+
+		$result = self::send_request( $body );
+		if ( ! $result['success'] ) {
 			return array(
 				'success' => false,
 				'insight' => null,
-				'error'   => sprintf(
-					/* translators: %s: error message */
-					__( 'API request failed: %s', 'silc-wooinsight-ai' ),
-					$response->get_error_message()
-				),
+				'error'   => $result['error'],
 			);
 		}
 
-		$status_code = wp_remote_retrieve_response_code( $response );
-		$body_raw    = wp_remote_retrieve_body( $response );
-		$data        = json_decode( $body_raw, true );
-
-		if ( $status_code !== 200 ) {
-			$error_msg = isset( $data['error']['message'] ) ? $data['error']['message'] : sprintf(
-				/* translators: %d: HTTP status code */
-				__( 'API returned HTTP %d', 'silc-wooinsight-ai' ),
-				$status_code
-			);
-			return array(
-				'success' => false,
-				'insight' => null,
-				'error'   => $error_msg,
-			);
-		}
-
-		// Extract the response text.
-		$content = '';
-		if ( isset( $data['choices'][0]['message']['content'] ) ) {
-			$content = $data['choices'][0]['message']['content'];
-		}
+		$content = self::extract_content( $result['data'] );
+		error_log( '[SILC_WIA] Insight Response: ' . substr( $content, 0, 500 ) );
 
 		if ( empty( $content ) ) {
 			return array(
@@ -327,34 +479,21 @@ class SILC_WIA_API {
 		$insight = self::parse_insight_json( $content );
 
 		if ( null === $insight ) {
-			// Fallback: re-prompt the AI asking for ONLY valid JSON.
-			$retry_body = $body;
+			// Retry: send the previous assistant response back as context,
+			// including reasoning_content if the API returned it.
+			$retry_body            = $body;
+			$assistant_msg         = self::build_assistant_retry_message( $result['data'] );
+			$retry_body['messages'][] = $assistant_msg;
 			$retry_body['messages'][] = array(
 				'role'    => 'user',
 				'content' => 'Your previous response was not valid JSON. Return ONLY valid JSON with no markdown, no explanation, just the JSON object.',
 			);
-			$retry_body['messages'][] = array(
-				'role'    => 'assistant',
-				'content' => $content,
-			);
 
-			$retry_response = wp_remote_post(
-				$api_url . '/chat/completions',
-				array(
-					'timeout'   => 600,
-					'headers'   => array(
-						'Authorization' => 'Bearer ' . $settings['api_key'],
-						'Content-Type'  => 'application/json',
-					),
-					'body'      => wp_json_encode( $retry_body ),
-				)
-			);
-
-			if ( ! is_wp_error( $retry_response ) ) {
-				$retry_body_raw = wp_remote_retrieve_body( $retry_response );
-				$retry_data     = json_decode( $retry_body_raw, true );
-				if ( isset( $retry_data['choices'][0]['message']['content'] ) ) {
-					$insight = self::parse_insight_json( $retry_data['choices'][0]['message']['content'] );
+			$retry = self::send_request( $retry_body );
+			if ( $retry['success'] ) {
+				$retry_content = self::extract_content( $retry['data'] );
+				if ( ! empty( $retry_content ) ) {
+					$insight = self::parse_insight_json( $retry_content );
 				}
 			}
 		}
@@ -517,7 +656,22 @@ class SILC_WIA_API {
 			);
 		}
 
-		$api_url = untrailingslashit( $settings['api_url'] );
+		$api_url  = untrailingslashit( $settings['api_url'] );
+		$model    = $settings['model'];
+		$is_reason = self::is_reasoning_model( $model );
+
+		$body = array(
+			'model'    => $model,
+			'messages' => array(
+				array( 'role' => 'user', 'content' => 'Say "ok" and nothing else.' ),
+			),
+		);
+
+		if ( $is_reason ) {
+			$body['max_completion_tokens'] = 20;
+		} else {
+			$body['max_tokens'] = 10;
+		}
 
 		$response = wp_remote_post(
 			$api_url . '/chat/completions',
@@ -527,16 +681,10 @@ class SILC_WIA_API {
 					'Authorization' => 'Bearer ' . $settings['api_key'],
 					'Content-Type'  => 'application/json',
 				),
-				'body'      => wp_json_encode( array(
-					'model'    => $settings['model'],
-					'messages' => array(
-						array( 'role' => 'user', 'content' => 'Say "ok" and nothing else.' ),
-					),
-					'max_tokens' => 10,
-				) ),
+				'body'      => wp_json_encode( $body ),
 			)
 		);
-		
+
 		if ( is_wp_error( $response ) ) {
 			return array(
 				'success' => false,
@@ -546,8 +694,8 @@ class SILC_WIA_API {
 
 		$status_code = wp_remote_retrieve_response_code( $response );
 		if ( $status_code !== 200 ) {
-			$body  = json_decode( wp_remote_retrieve_body( $response ), true );
-			$error = isset( $body['error']['message'] ) ? $body['error']['message'] : "HTTP $status_code";
+			$response_body = json_decode( wp_remote_retrieve_body( $response ), true );
+			$error = isset( $response_body['error']['message'] ) ? $response_body['error']['message'] : "HTTP $status_code";
 			return array(
 				'success' => false,
 				'message' => $error,
