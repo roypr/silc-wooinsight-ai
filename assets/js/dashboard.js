@@ -943,9 +943,6 @@
 				el('div', { className: 'silc-wia-chart-type-badge' }, 'Chart: ' + chartTypeLabel)
 			);
 		}
-				el('div', { className: 'silc-wia-chart-type-badge' }, 'Chart: ' + chartTypeLabel)
-			);
-		}
 
 		function renderListResult() {
 			var listData = insightData.list_data;
