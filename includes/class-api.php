@@ -3,7 +3,7 @@
  * OpenAI-Compatible API Client
  *
  * Handles communication with any OpenAI-compatible API endpoint
- * (OpenAI, Azure, Ollama, LocalAI, vLLM, etc.) for SQL generation.
+ * (OpenAI, Azure, Ollama, LocalAI, vLLM, etc.) for insight generation.
  *
  * Supports both standard instruct models and reasoning models (o1, o3,
  * DeepSeek-R1, etc.) with appropriate parameter handling for each.
@@ -23,10 +23,11 @@ class SILC_WIA_API {
 	/**
 	 * Default settings.
 	 */
-	const DEFAULT_API_URL     = 'https://api.openai.com/v1';
-	const DEFAULT_MODEL       = 'gpt-4o-mini';
-	const DEFAULT_MAX_TOKENS  = 500;
-	const DEFAULT_TEMPERATURE = 0.2;
+	const DEFAULT_API_URL       = 'https://api.openai.com/v1';
+	const DEFAULT_MODEL         = 'gpt-4o-mini';
+	const DEFAULT_MAX_TOKENS    = 500;
+	const DEFAULT_TEMPERATURE   = 0.2;
+	const DEFAULT_CACHE_TTL     = 3600; // 1 hour in seconds.
 
 	/**
 	 * Max tokens for insight generation (JSON output needs more).
@@ -66,6 +67,7 @@ class SILC_WIA_API {
 			'model'       => self::DEFAULT_MODEL,
 			'max_tokens'  => self::DEFAULT_MAX_TOKENS,
 			'temperature' => self::DEFAULT_TEMPERATURE,
+			'cache_ttl'   => self::DEFAULT_CACHE_TTL,
 		);
 
 		$saved = get_option( 'silc_wia_api_settings', array() );
@@ -75,6 +77,17 @@ class SILC_WIA_API {
 		}
 
 		return wp_parse_args( $saved, $defaults );
+	}
+
+	/**
+	 * Get the cache TTL in seconds from settings, with a sensible default.
+	 *
+	 * @return int Cache TTL in seconds.
+	 */
+	public static function get_cache_ttl(): int {
+		$settings = self::get_settings();
+		$ttl      = intval( $settings['cache_ttl'] ?? self::DEFAULT_CACHE_TTL );
+		return max( 0, min( 86400 * 7, $ttl ) ); // Between 0 and 7 days.
 	}
 
 	/**
@@ -257,154 +270,7 @@ class SILC_WIA_API {
 	}
 
 	// ----------------------------------------------------------------------- //
-	//  SQL GENERATION
-	// ----------------------------------------------------------------------- //
-
-	/**
-	 * Generate SQL from a natural language question using the configured API.
-	 *
-	 * Uses get_schema_context() from Woo_Schema for the schema context,
-	 * same as generate_insight(), ensuring a single source of truth.
-	 *
-	 * @param string $question       The user's natural language question.
-	 * @param string $schema_context The database schema context for the prompt.
-	 * @return array{success: bool, sql: string, error: string}
-	 */
-	public static function generate_sql( string $question, string $schema_context ): array {
-		$settings = self::get_settings();
-
-		if ( empty( $settings['api_key'] ) ) {
-			return array(
-				'success' => false,
-				'sql'     => '',
-				'error'   => __( 'API key is not configured. Please go to Settings and add your API key.', 'silc-wooinsight-ai' ),
-			);
-		}
-
-		// Build the chat completion prompt.
-		$system_prompt = self::build_system_prompt();
-		$user_prompt   = self::build_user_prompt( $question, $schema_context );
-
-		$model      = $settings['model'];
-		$is_reason  = self::is_reasoning_model( $model );
-		$max_tokens = self::get_effective_max_tokens( $model, (int) $settings['max_tokens'] );
-
-		if ( $is_reason ) {
-			// Reasoning models don't support system role; fold system prompt into user.
-			$messages = array(
-				array( 'role' => 'user', 'content' => $system_prompt . "\n\n" . $user_prompt ),
-			);
-		} else {
-			$messages = array(
-				array( 'role' => 'system', 'content' => $system_prompt ),
-				array( 'role' => 'user',   'content' => $user_prompt ),
-			);
-		}
-
-		$body = self::build_request_body( $model, $messages, $max_tokens, (float) $settings['temperature'] );
-
-		$result = self::send_request( $body );
-		if ( ! $result['success'] ) {
-			return array(
-				'success' => false,
-				'sql'     => '',
-				'error'   => $result['error'],
-			);
-		}
-
-		$content = self::extract_content( $result['data'] );
-
-		if ( empty( $content ) ) {
-			return array(
-				'success' => false,
-				'sql'     => '',
-				'error'   => __( 'API returned an empty response.', 'silc-wooinsight-ai' ),
-			);
-		}
-
-		// Parse the SQL from the response.
-		$sql = self::extract_sql( $content );
-
-		if ( empty( $sql ) ) {
-			return array(
-				'success' => false,
-				'sql'     => '',
-				'error'   => __( 'Could not extract SQL from the API response.', 'silc-wooinsight-ai' ),
-			);
-		}
-
-		return array(
-			'success' => true,
-			'sql'     => $sql,
-			'error'   => '',
-		);
-	}
-
-	/**
-	 * Build the system-level prompt for SQL generation.
-	 *
-	 * @return string
-	 */
-	private static function build_system_prompt(): string {
-		return 'You are a SQL expert for WooCommerce on WordPress. '
-			. 'Your task is to convert natural language questions into valid MySQL SELECT queries. '
-			. 'Follow these rules strictly:'
-			. "\n1. ONLY output the SQL query, nothing else."
-			. "\n2. The SQL must be a single SELECT statement only."
-			. "\n3. Use the table prefix provided in the schema context."
-			. "\n4. Use proper MySQL syntax."
-			. "\n5. Do NOT add any markdown formatting, code fences, or explanations."
-			. "\n6. Do NOT include semicolons at the end."
-			. "\n7. If you cannot answer, output: -- unable to generate query";
-	}
-
-	/**
-	 * Build the user prompt containing schema context and question.
-	 *
-	 * @param string $question       The user's question.
-	 * @param string $schema_context Database schema context.
-	 * @return string
-	 */
-	private static function build_user_prompt( string $question, string $schema_context ): string {
-		return 'Here is the WooCommerce database schema (table prefix included):'
-			. "\n\n" . $schema_context
-			. "\n\nUser question: " . $question
-			. "\n\nGenerate ONLY the SQL query:";
-	}
-
-	/**
-	 * Extract SQL from the API response text, stripping markdown fences.
-	 *
-	 * @param string $text The raw response text.
-	 * @return string The extracted SQL, or empty string.
-	 */
-	private static function extract_sql( string $text ): string {
-		// Remove markdown code fences (```sql ... ``` or ``` ... ```).
-		$text = preg_replace( '/```(?:sql)?\s*\n?/i', '', $text );
-
-		// Trim whitespace.
-		$text = trim( $text );
-
-		// Find the first SELECT statement.
-		$pos = stripos( $text, 'SELECT' );
-		if ( false === $pos ) {
-			// Check for comment-based "unable to generate" indicator.
-			if ( strpos( $text, '-- unable' ) !== false ) {
-				return '';
-			}
-			return '';
-		}
-
-		$sql = substr( $text, $pos );
-
-		// Remove trailing semicolons.
-		$sql = rtrim( $sql, "; \t\n\r\0\x0B" );
-
-		return trim( $sql );
-	}
-
-	// ----------------------------------------------------------------------- //
-	//  INSIGHT GENERATION (v2.0)
+	//  INSIGHT GENERATION
 	// ----------------------------------------------------------------------- //
 
 	/**
@@ -413,7 +279,7 @@ class SILC_WIA_API {
 	 * Uses a dedicated prompt that asks the AI to return valid JSON with
 	 * fields: sql, type, chart_config, list_config, answer_text.
 	 *
-	 * Uses get_schema_context() from Woo_Schema (same as generate_sql()).
+	 * Uses get_schema_context() from Woo_Schema.
 	 *
 	 * @param string $question       The user's natural language question.
 	 * @param string $schema_context The database schema context for the prompt.
@@ -527,6 +393,7 @@ class SILC_WIA_API {
 			. "\n\n"
 			. '{'
 			. "\n  \"sql\": \"The SQL SELECT query to execute\","
+			. "\n  \"title\": \"Short descriptive title (2-6 words) summarizing the insight. Examples: 'Best Selling Products', 'Monthly Revenue Trend', 'Order Status Distribution'.\","
 			. "\n  \"type\": \"chart\" | \"list\" | \"answer\","
 			. "\n  \"chart_config\": {"
 			. "\n    \"chart_type\": \"bar\" | \"line\" | \"pie\" | \"horizontalBar\" | \"doughnut\" | \"radar\" | \"polarArea\","
@@ -723,3 +590,6 @@ class SILC_WIA_API {
 		);
 	}
 }
+	// ----------------------------------------------------------------------- //
+	//  INSIGHT GENERATION
+	// ----------------------------------------------------------------------- //

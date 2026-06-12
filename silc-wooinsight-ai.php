@@ -71,7 +71,6 @@ register_activation_hook( __FILE__, function () {
  * Deactivation hook - cleanup.
  */
 register_deactivation_hook( __FILE__, function () {
-	delete_option( 'silc_wia_query_history' );
 	delete_option( 'silc_wia_insight_history' );
 	delete_option( 'silc_wia_insight_cache' );
 } );
@@ -80,13 +79,6 @@ register_deactivation_hook( __FILE__, function () {
  * Add settings link on the plugins page.
  */
 add_filter( 'plugin_action_links_' . SILC_WIA_BASENAME, function ( $links ) {
-	$settings_link = sprintf(
-		'<a href="%s">%s</a>',
-		esc_url( admin_url( 'admin.php?page=silc-wooinsight-ai-settings' ) ),
-		esc_html__( 'AI Settings', 'silc-wooinsight-ai' )
-	);
-	array_unshift( $links, $settings_link );
-
 	$dashboard_link = sprintf(
 		'<a href="%s">%s</a>',
 		esc_url( admin_url( 'admin.php?page=silc-wooinsight-ai' ) ),

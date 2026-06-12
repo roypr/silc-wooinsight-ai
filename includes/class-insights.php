@@ -26,7 +26,8 @@ require_once SILC_WIA_PATH . 'includes/class-woo-schema.php';
 class SILC_WIA_Insights {
 
 	/**
-	 * Cache TTL in seconds (1 hour).
+	 * Default cache TTL in seconds (1 hour).
+	 * Overridden by the 'cache_ttl' setting if configured.
 	 */
 	const CACHE_TTL = 3600;
 
@@ -120,8 +121,11 @@ class SILC_WIA_Insights {
 		$response['columns']    = $columns;
 		$response['question']   = $question;
 
-		// Cache the result.
-		set_transient( $cache_key, $response, self::CACHE_TTL );
+		// Cache the result using the configured TTL (falls back to CACHE_TTL constant).
+		$cache_ttl = SILC_WIA_API::get_cache_ttl();
+		if ( $cache_ttl > 0 ) {
+			set_transient( $cache_key, $response, $cache_ttl );
+		}
 
 		return $response;
 	}

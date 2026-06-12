@@ -647,7 +647,7 @@ class SILC_WIA_Woo_Schema {
 	 * order storage backend (HPOS or legacy). This prevents the AI from seeing
 	 * tables and rules that don't apply to the current site.
 	 *
-	 * Both generate_sql() and generate_insight() in class-api.php use this
+	 * generate_insight() in class-api.php uses this method, ensuring a single
 	 * method, ensuring a single source of truth for schema context.
 	 *
 	 * @return string

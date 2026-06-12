@@ -15,13 +15,27 @@ var SILC_WIA_Charts = ( function () {
 	'use strict';
 
 	var charts = {};
+
+	/**
+	 * Get the WP admin theme color, falling back to a default blue.
+	 */
+	function getThemeColor() {
+		if (typeof document !== 'undefined') {
+			var val = getComputedStyle(document.documentElement)
+				.getPropertyValue('--wp-admin-theme-color').trim();
+			if (val) return val;
+		}
+		return '#2271b1';
+	}
+
+	var themeColor = getThemeColor();
+
 	var defaultColors = [
-		'#2271b1',
+		themeColor,
 		'#2c8a4a',
 		'#d63638',
 		'#826eb4',
 		'#f0a849',
-		'#72aee6',
 		'#46b450',
 		'#ffb900',
 		'#c9356e',
@@ -58,7 +72,7 @@ var SILC_WIA_Charts = ( function () {
 				label: ds.label || '',
 				data: ds.data || [],
 				backgroundColor: ds.backgroundColor || defaultColors[ index % defaultColors.length ],
-				borderColor: ds.borderColor || '#2271b1',
+				borderColor: ds.borderColor || themeColor,
 				borderWidth: 1,
 			};
 		} );
