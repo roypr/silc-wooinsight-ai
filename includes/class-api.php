@@ -320,6 +320,8 @@ class SILC_WIA_API {
 
 		// Debug logging.
 		error_log( '[SILC_WIA] Insight Request - Model: ' . $model . ', Reasoning: ' . ( $is_reason ? 'yes' : 'no' ) );
+		error_log('[SILC_WIA] Insight Request - System Prompt:' . $system_prompt);
+		error_log('[SILC_WIA] Insight Request - User Prompt:' . $user_prompt);
 
 		$result = self::send_request( $body );
 		if ( ! $result['success'] ) {

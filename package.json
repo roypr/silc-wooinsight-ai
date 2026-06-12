@@ -1,0 +1,24 @@
+{
+  "name": "silc-wooinsight-ai",
+  "version": "2.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "test",
+    "build": "webpack --config webpack.config.js",
+    "lint" : "eslint assets/js/src"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/plugin-transform-react-jsx": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "@eslint/js": "^10.0.1",
+    "babel-loader": "^10.1.1",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0",
+    "webpack": "^5.107.2",
+    "webpack-cli": "^7.0.3"
+  }
+}
