@@ -532,6 +532,9 @@
 		// --- History Panel ---
 
 		function renderHistoryPanel() {
+			var items = [];
+
+			if (!insightHistory || insightHistory.length === 0) {
 				items.push(el('p', { key: 'empty', className: 'silc-wia-muted' }, l10n.noInsightHistory || 'No insight history yet.'));
 			} else {
 				items.push(
@@ -570,10 +573,10 @@
 						)
 					);
 				});
-		}
+			}
+
 			return el('div', null, items);
 		}
-
 		// --- Guides Panel ---
 
 		function renderGuidesPanel() {
