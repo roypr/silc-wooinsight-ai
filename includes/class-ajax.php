@@ -21,6 +21,11 @@ class SILC_WIA_Ajax {
 
 	/**
 	 * Nonce action.
+	 *
+	 * @var string
+	 */
+	const NONCE_ACTION = 'silc-wia-nonce';
+
 	/**
 	 * Register all AJAX handlers.
 	 */
