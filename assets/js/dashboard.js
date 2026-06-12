@@ -524,7 +524,6 @@
 					)
 				);
 			}
-			}
 
 			return el('div', null, parts);
 		}
@@ -1149,7 +1148,8 @@
 
 	var rootElement = document.getElementById('silc-wia-dashboard');
 	if (rootElement) {
-		wp.element.render(el(WooInsightDashboard), rootElement);
+		// Ensure element call is properly formed
+		wp.element.render(el(WooInsightDashboard, null), rootElement);
 	}
 
 })(window.wp);
