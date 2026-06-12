@@ -925,11 +925,6 @@
 
 			return el('div', null, parts);
 		}
-					break;
-				case 'answer':
-			var config = insightData.chart_config;
-			return el('div', null, parts);
-		}
 
 		function renderChartResult() {
 			var config = insightData.chart_config;
