@@ -154,14 +154,13 @@ export function renderResult(props) {
 		titleBarItems.push(
 			el(Button, {
 				key: 'refresh',
-				isSmall: true,
-				variant: 'secondary',
-				className: 'silc-wia-refresh-btn',
-				onClick: function () {
-					props.handleAsk(props.question);
-				},
-				disabled: props.isLoading,
-			}, props.isLoading ? el(Spinner, {}) : '🔄 ' + (l10n.refresh || 'Refresh'))
+			}, props.isLoading
+				? el(Spinner, {})
+				: el('span', { className: 'silc-wia-btn-content' },
+					el('span', { className: 'dashicons dashicons-update' }),
+					el('span', { className: 'silc-wia-btn-label' }, l10n.refresh || 'Refresh')
+				)
+			)
 		);
 	}
 

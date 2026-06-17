@@ -21,6 +21,7 @@ import {
 	renderSqlPanel,
 	renderHistoryPanel,
 	renderGuidesPanel,
+	renderSuggestedPanel,
 } from './panels.js';
 
 import { renderResult } from './results.js';
@@ -63,7 +64,7 @@ function WooInsightDashboard() {
 	var setHasRun = _hasRun[1];
 
 	// Sidebar state.
-	var _sidebarExpanded = useState(true);
+	var _sidebarExpanded = useState(false);
 	var sidebarExpanded = _sidebarExpanded[0];
 	var setSidebarExpanded = _sidebarExpanded[1];
 
@@ -193,6 +194,7 @@ function WooInsightDashboard() {
 		}
 
 		setQuestion(item.question || '');
+		setActivePanel(null);
 		setHasRun(true);
 		setError(null);
 		setLoading(false);
@@ -327,6 +329,12 @@ function WooInsightDashboard() {
 				setActivePanel: setActivePanel,
 				handleAsk: handleAsk,
 			});
+		} else if (activePanel === 'suggested') {
+			panelContent = renderSuggestedPanel({
+				setQuestion: setQuestion,
+				setActivePanel: setActivePanel,
+				handleAsk: handleAsk,
+			});
 		} else if (activePanel === 'settings') {
 			panelContent = renderSettingsPanel({
 				formSettings: formSettings,
@@ -400,7 +408,13 @@ function WooInsightDashboard() {
 						isPrimary: true,
 						onClick: function () { handleAsk(); },
 						disabled: isLoading || !question.trim() || !apiConfigured,
-					}, isLoading ? el(Spinner, {}) : (l10n.getInsight || 'Get Insight'))
+					}, isLoading
+						? el(Spinner, {})
+						: el('span', { className: 'silc-wia-btn-content' },
+							el('span', { className: 'dashicons dashicons-visibility' }),
+							el('span', { className: 'silc-wia-btn-label' }, l10n.getInsight || 'Get Insight')
+						)
+					)
 				)
 			);
 		}
@@ -450,7 +464,13 @@ function WooInsightDashboard() {
 						isPrimary: true,
 						onClick: function () { handleAsk(); },
 						disabled: isLoading || !question.trim() || !apiConfigured,
-					}, isLoading ? el(Spinner, {}) : (l10n.getInsight || 'Get Insight'))
+					}, isLoading
+						? el(Spinner, {})
+						: el('span', { className: 'silc-wia-btn-content' },
+							el('span', { className: 'dashicons dashicons-visibility' }),
+							el('span', { className: 'silc-wia-btn-label' }, l10n.getInsight || 'Get Insight')
+						)
+					)
 				)
 			)
 		);

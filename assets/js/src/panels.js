@@ -1,12 +1,12 @@
 /**
- * SILC WooInsight AI — Side panel renderers (SQL, History, Guides)
+ * SILC WooInsight AI — Side panel renderers (SQL, History, Guides, Suggested)
  *
  * @package SILC_WooInsight_AI
  */
 
 /* global wp */
 
-import { l10n, GUIDE_SECTIONS } from './utils.js';
+import { l10n, GUIDE_SECTIONS, SUGGESTED_PROMPTS } from './utils.js';
 
 var el = wp.element.createElement;
 var Button = wp.components.Button;
@@ -16,12 +16,14 @@ var Button = wp.components.Button;
  *
  * @param {string} panel Panel key.
  * @return {string} Title.
- */
+ * */
+
 export function getPanelTitle(panel) {
 	var titles = {
 		sql: l10n.sqlDetails || 'SQL & Details',
 		history: l10n.history || 'History',
 		guides: l10n.guides || 'Guides',
+		suggested: l10n.suggestedPrompts || 'Suggested Prompts',
 		settings: l10n.settings || 'Settings',
 	};
 	return titles[panel] || panel;
@@ -179,6 +181,35 @@ export function renderGuidesPanel(props) {
 			)
 		);
 	});
-
 	return el('div', null, sections);
+}
+
+/**
+}
+
+/**
+ * Render the Suggested Prompts panel.
+ *
+ * @param {Object}   props
+ * @param {Function} props.setQuestion
+ * @param {Function} props.setActivePanel
+ * @param {Function} props.handleAsk
+ * @return {Object} Element.
+ */
+export function renderSuggestedPanel(props) {
+	var chips = SUGGESTED_PROMPTS.map(function (p, i) {
+		return el('div', {
+			key: i,
+			className: 'silc-wia-suggested-panel-chip',
+			onClick: function () {
+				props.setActivePanel(null);
+				props.handleAsk(p.text);
+			},
+		},
+			el('span', { className: 'icon' }, p.icon),
+			el('span', { className: 'text' }, p.text)
+		);
+	});
+
+	return el('div', { className: 'silc-wia-suggested-panel' }, chips);
 }
