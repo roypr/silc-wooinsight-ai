@@ -56,6 +56,7 @@ export function renderSidebar(props) {
 	var items = [
 		{ icon: 'backup', label: l10n.history || 'History', panel: 'history' },
 		{ icon: 'book', label: l10n.guides || 'Guides', panel: 'guides' },
+		{ icon: 'lightbulb', label: l10n.suggested || 'Suggested', panel: 'suggested' },
 		{ icon: 'editor-code', label: l10n.sqlDetails || 'SQL', panel: 'sql' },
 	];
 
