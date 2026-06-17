@@ -359,27 +359,48 @@ function WooInsightDashboard() {
 		if (!hasRun) {
 			// Empty state: centered welcome.
 			return el('div', { className: 'silc-wia-chat-empty' },
-				el('div', { className: 'silc-wia-chat-empty-icon' }, '\uD83D\uDCCA'),
-				el('h2', null, 'Ask anything about your WooCommerce store'),
-				el('p', null,
-					'Get instant charts, lists, and answers about your sales, products, customers, and more. Just type a question or try one below.'
+				el('div', { className: 'silc-wia-chat-results' },
+					el('div', { className: 'silc-wia-chat-empty-icon' }, '\uD83D\uDCCA'),
+					el('h2', null, 'Ask anything about your WooCommerce store'),
+					el('p', null,
+						'Get instant charts, lists, and answers about your sales, products, customers, and more. Just type a question or try one below.'
+					),
+					!apiConfigured
+						? el('p', {
+							style: { color: '#b32d2e', fontSize: '13px', background: '#fcf0f1', padding: '8px 16px', borderRadius: '8px', marginBottom: '20px', maxWidth: '400px' },
+						}, l10n.apiNotConfigured + '. Open the \u2699\uFE0F Settings panel to add your API key.')
+						: null,
+					el('div', { className: 'silc-wia-prompts' },
+						SUGGESTED_PROMPTS.map(function (p, i) {
+							return el('div', {
+								key: i,
+								className: 'silc-wia-prompt-chip',
+								onClick: function () { handleAsk(p.text); },
+							},
+								el('span', { className: 'icon' }, p.icon),
+								p.text
+							);
+						})
+					),
 				),
-				!apiConfigured
-					? el('p', {
-						style: { color: '#b32d2e', fontSize: '13px', background: '#fcf0f1', padding: '8px 16px', borderRadius: '8px', marginBottom: '20px', maxWidth: '400px' },
-					}, l10n.apiNotConfigured + '. Open the \u2699\uFE0F Settings panel to add your API key.')
-					: null,
-				el('div', { className: 'silc-wia-prompts' },
-					SUGGESTED_PROMPTS.map(function (p, i) {
-						return el('div', {
-							key: i,
-							className: 'silc-wia-prompt-chip',
-							onClick: function () { handleAsk(p.text); },
+				el('div', { className: 'silc-wia-chat-input-row' },
+					el(TextControl, {
+						placeholder: l10n.askQuestion || 'Ask anything...',
+						value: question,
+						onChange: setQuestion,
+						onKeyDown: function (e) {
+							if (e.key === 'Enter' && !e.shiftKey) {
+								e.preventDefault();
+								handleAsk();
+							}
 						},
-							el('span', { className: 'icon' }, p.icon),
-							p.text
-						);
-					})
+						disabled: isLoading,
+					}),
+					el(Button, {
+						isPrimary: true,
+						onClick: function () { handleAsk(); },
+						disabled: isLoading || !question.trim() || !apiConfigured,
+					}, isLoading ? el(Spinner, {}) : (l10n.getInsight || 'Get Insight'))
 				)
 			);
 		}
