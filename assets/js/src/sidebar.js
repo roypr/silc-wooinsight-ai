@@ -54,9 +54,9 @@ export function renderSidebar(props) {
 	var toggleSidebar = props.toggleSidebar;
 
 	var items = [
-		{ icon: 'editor-code', label: l10n.sqlDetails || 'SQL', panel: 'sql' },
 		{ icon: 'backup', label: l10n.history || 'History', panel: 'history' },
 		{ icon: 'book', label: l10n.guides || 'Guides', panel: 'guides' },
+		{ icon: 'editor-code', label: l10n.sqlDetails || 'SQL', panel: 'sql' },
 	];
 
 	return el('div', {
