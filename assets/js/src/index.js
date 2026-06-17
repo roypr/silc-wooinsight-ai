@@ -451,19 +451,6 @@ function WooInsightDashboard() {
 						onClick: function () { handleAsk(); },
 						disabled: isLoading || !question.trim() || !apiConfigured,
 					}, isLoading ? el(Spinner, {}) : (l10n.getInsight || 'Get Insight'))
-				),
-				// Suggested prompts below input.
-				el('div', { className: 'silc-wia-prompts-below' },
-					SUGGESTED_PROMPTS.map(function (p, i) {
-						return el('div', {
-							key: i,
-							className: 'silc-wia-prompt-chip',
-							onClick: function () { handleAsk(p.text); },
-						},
-							el('span', { className: 'icon' }, p.icon),
-							p.text
-						);
-					})
 				)
 			)
 		);
