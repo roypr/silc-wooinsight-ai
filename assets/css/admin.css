@@ -1012,3 +1012,87 @@
 .silc-wia-gap-2 {
 	gap: 8px;
 }
+
+/* ----------------------------------------------------------------------- */
+/*  BUTTON ICON + LABEL                                                    */
+/* ----------------------------------------------------------------------- */
+
+.silc-wia-btn-content {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.silc-wia-btn-content .dashicons {
+	font-size: 16px;
+	width: 16px;
+	height: 16px;
+}
+
+/* ----------------------------------------------------------------------- */
+/*  PANEL: Suggested Prompts                                                */
+/* ----------------------------------------------------------------------- */
+
+.silc-wia-suggested-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.silc-wia-suggested-panel-chip {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 14px;
+	background: rgba(var(--wp-admin-theme-color-rgb), 0.06);
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	font-size: 13px;
+	color: var(--wp-admin-theme-color);
+	cursor: pointer;
+	transition: all 0.15s;
+}
+
+.silc-wia-suggested-panel-chip:hover {
+	background: var(--wp-admin-theme-color);
+	color: #fff;
+	border-color: var(--wp-admin-theme-color);
+}
+
+.silc-wia-suggested-panel-chip .icon {
+	font-size: 16px;
+	flex-shrink: 0;
+}
+
+/* ----------------------------------------------------------------------- */
+/*  MOBILE — hide button labels, only icons                                */
+/* ----------------------------------------------------------------------- */
+
+@media screen and (max-width: 782px) {
+	.silc-wia-btn-content .silc-wia-btn-label {
+		display: none;
+	}
+
+	.silc-wia-btn-content .dashicons {
+		font-size: 18px;
+		width: 18px;
+		height: 18px;
+	}
+
+	.silc-wia-sidebar.expanded {
+		width: 48px;
+	}
+
+	.silc-wia-sidebar-item {
+		padding: 10px 14px;
+		justify-content: center;
+	}
+
+	.silc-wia-sidebar-item .label {
+		display: none;
+	}
+
+	.silc-wia-panel {
+		width: 260px;
+	}
+}
