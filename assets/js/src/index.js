@@ -109,6 +109,11 @@ function WooInsightDashboard() {
 	var testResult = _testResult[0];
 	var setTestResult = _testResult[1];
 
+	// Guides search state.
+	var _guideSearchQuery = useState('');
+	var guideSearchQuery = _guideSearchQuery[0];
+	var setGuideSearchQuery = _guideSearchQuery[1];
+
 	// --- Effects ---
 
 	useEffect(function () {
@@ -328,6 +333,8 @@ function WooInsightDashboard() {
 				setQuestion: setQuestion,
 				setActivePanel: setActivePanel,
 				handleAsk: handleAsk,
+				guideSearchQuery: guideSearchQuery,
+				setGuideSearchQuery: setGuideSearchQuery,
 			});
 		} else if (activePanel === 'suggested') {
 			panelContent = renderSuggestedPanel({

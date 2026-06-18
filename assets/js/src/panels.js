@@ -152,40 +152,109 @@ export function renderHistoryPanel(props) {
  * @param {Function} props.setQuestion
  * @param {Function} props.setActivePanel
  * @param {Function} props.handleAsk
+ * @param {string}   props.guideSearchQuery
+ * @param {Function} props.setGuideSearchQuery
  * @return {Object} Element.
  */
 export function renderGuidesPanel(props) {
+	var searchQuery = props.guideSearchQuery || '';
+	var setSearchQuery = props.setGuideSearchQuery;
+
+	var isSearching = searchQuery.trim().length > 0;
+
+	// Attempt to build a case-insensitive regex from the query.
+	var regex;
+	var regexValid = true;
+	if (isSearching) {
+		try {
+			regex = new RegExp(searchQuery, 'i');
+		} catch (e) {
+			regexValid = false;
+			void e; // eslint-disable-line no-unused-vars
+		}
+	}
+
 	var sections = [];
+	var matchCount = 0;
 
 	GUIDE_SECTIONS.forEach(function (section, si) {
-		var examples = section.examples.map(function (ex, ei) {
-			return el('div', {
-				key: ei,
-				className: 'silc-wia-guide-example',
-				onClick: function () {
-					props.setQuestion(ex.text);
-					props.setActivePanel(null);
-					props.handleAsk(ex.text);
+		var showSection;
+		var showExamples;
+
+		if (!isSearching || !regexValid) {
+			// No search active or invalid regex — show everything.
+			showSection = true;
+			showExamples = section.examples;
+		} else {
+			var sectionHeaderMatch = regex.test(section.title) || regex.test(section.text);
+			var matchingExamples = section.examples.filter(function (ex) {
+				return regex.test(ex.text) || regex.test(ex.desc);
+			});
+
+			if (sectionHeaderMatch || matchingExamples.length > 0) {
+				showSection = true;
+				// If the section header itself matched, show all its examples;
+				// otherwise only the examples that matched.
+				showExamples = sectionHeaderMatch ? section.examples : matchingExamples;
+			}
+		}
+
+		if (showSection) {
+			matchCount++;
+
+			var examples = showExamples.map(function (ex, ei) {
+				return el('div', {
+					key: ei,
+					className: 'silc-wia-guide-example',
+					onClick: function () {
+						props.setQuestion(ex.text);
+						props.setActivePanel(null);
+						props.handleAsk(ex.text);
+					},
 				},
-			},
-				'\uD83D\uDC49 ' + ex.text,
-				el('span', { className: 'desc' }, ex.desc)
+					'\uD83D\uDC49 ' + ex.text,
+					el('span', { className: 'desc' }, ex.desc)
+				);
+			});
+
+			sections.push(
+				el('div', { key: si, className: 'silc-wia-guide-section' },
+					el('h3', null, section.title),
+					el('p', null, section.text),
+					examples
+				)
 			);
-		});
-
-		sections.push(
-			el('div', { key: si, className: 'silc-wia-guide-section' },
-				el('h3', null, section.title),
-				el('p', null, section.text),
-				examples
-			)
-		);
+		}
 	});
-	return el('div', null, sections);
+
+	// Search input + content.
+	return el('div', null,
+
+		// Search bar.
+		el('div', { className: 'silc-wia-guide-search', style: { marginBottom: '12px' } },
+			el('input', {
+				type: 'text',
+				placeholder: 'Search guides (regex supported)...',
+				value: searchQuery,
+				onChange: function (e) { setSearchQuery(e.target.value); },
+				style: { width: '100%', boxSizing: 'border-box' },
+			})
+		),
+
+		// Invalid regex warning.
+		!regexValid
+			? el('p', { className: 'silc-wia-muted', style: { color: '#b32d2e', fontSize: '12px', margin: '0 0 8px' } },
+				'Invalid regex pattern.'
+			)
+			: null,
+
+		// No-match message or sections.
+		isSearching && regexValid && matchCount === 0
+			? el('p', { className: 'silc-wia-muted' }, 'No guides match "' + searchQuery + '".')
+			: sections
+	);
 }
 
-/**
-}
 
 /**
  * Render the Suggested Prompts panel.
