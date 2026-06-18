@@ -34,9 +34,10 @@ class SILC_WIA_Ajax {
 		add_action( 'wp_ajax_silc_wia_get_schema', array( __CLASS__, 'handle_get_schema' ) );
 		// Insight endpoints.
 		add_action( 'wp_ajax_silc_wia_generate_insight', array( __CLASS__, 'handle_generate_insight' ) );
-		add_action( 'wp_ajax_silc_wia_regen_insight', array( __CLASS__, 'handle_regen_insight' ) );
 		add_action( 'wp_ajax_silc_wia_get_insight_history', array( __CLASS__, 'handle_get_insight_history' ) );
 		add_action( 'wp_ajax_silc_wia_clear_insight_history', array( __CLASS__, 'handle_clear_insight_history' ) );
+		// Execute a stored SQL query without re-invoking AI.
+		add_action( 'wp_ajax_silc_wia_execute_sql', array( __CLASS__, 'handle_execute_sql' ) );
 	}
 	/**
 	 * Verify nonce and user capabilities.
@@ -284,8 +285,62 @@ class SILC_WIA_Ajax {
 
 		delete_option( 'silc_wia_insight_history' );
 
-		wp_send_json_success( array(
+\twp_send_json_success( array(
 			'message' => __( 'Insight history cleared.', 'silc-wooinsight-ai' ),
 		) );
+	}
+
+	/**
+	 * Handle: Re-execute a stored SQL query without calling AI.
+	 *
+	 * POST params: sql, type, chart_config (JSON), list_config (JSON), answer_text
+	 * Response: Same structure as handle_generate_insight.
+	 */
+	public static function handle_execute_sql(): void {
+		if ( ! self::verify() ) {
+			return;
+		}
+
+		$sql = isset( $_POST['sql'] ) ? wp_unslash( $_POST['sql'] ) : '';
+		$sql = trim( $sql );
+
+		if ( empty( $sql ) ) {
+			wp_send_json_error( array( 'message' => __( 'No SQL query provided.', 'silc-wooinsight-ai' ) ) );
+			return;
+		}
+
+		$type = isset( $_POST['type'] ) ? sanitize_text_field( wp_unslash( $_POST['type'] ) ) : 'answer';
+
+		// Rebuild insight config from the stored data sent from frontend.
+		$insight_data = array();
+
+		$chart_config = isset( $_POST['chart_config'] ) ? json_decode( wp_unslash( $_POST['chart_config'] ), true ) : null;
+		if ( is_array( $chart_config ) ) {
+			$insight_data['chart_config'] = $chart_config;
+		}
+
+		$list_config = isset( $_POST['list_config'] ) ? json_decode( wp_unslash( $_POST['list_config'] ), true ) : null;
+		if ( is_array( $list_config ) ) {
+			$insight_data['list_config'] = $list_config;
+		}
+
+		$answer_text = isset( $_POST['answer_text'] ) ? sanitize_text_field( wp_unslash( $_POST['answer_text'] ) ) : '';
+		if ( ! empty( $answer_text ) ) {
+			$insight_data['answer_text'] = $answer_text;
+		}
+
+		require_once SILC_WIA_PATH . 'includes/class-insights.php';
+
+		$result = SILC_WIA_Insights::re_execute_sql( $sql, $type, $insight_data );
+
+		if ( ! $result['success'] ) {
+			wp_send_json_error( array(
+				'message' => $result['error'] ?? __( 'Failed to execute SQL.', 'silc-wooinsight-ai' ),
+				'sql'     => $sql,
+			) );
+			return;
+		}
+
+		wp_send_json_success( $result );
 	}
 }

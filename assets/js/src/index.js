@@ -230,6 +230,37 @@ function WooInsightDashboard() {
 		}).catch(function () {});
 	}, []);
 
+	var handleRefresh = useCallback(function (insightData) {
+		if (!insightData || !insightData.sql) return;
+
+		// Destroy existing chart.
+		if (typeof SILC_WIA_Charts !== 'undefined') {
+			SILC_WIA_Charts.destroyChart('insight-chart-canvas');
+		}
+
+		setLoading(true);
+		setError(null);
+
+		doAction('execute_sql', {
+			sql: insightData.sql,
+			type: insightData.type || 'answer',
+			chart_config: insightData.chart_config ? JSON.stringify(insightData.chart_config) : '',
+			list_config: insightData.list_config ? JSON.stringify(insightData.list_config) : '',
+			answer_text: insightData.answer_text || '',
+		})
+			.then(function (resp) {
+				setLoading(false);
+				if (resp.success && resp.data) {
+					setInsightData(resp.data);
+				} else {
+					setError(resp.data && resp.data.message ? resp.data.message : (l10n.errorOccurred || 'Failed to refresh'));
+				}
+			})
+			.catch(function () {
+				setLoading(false);
+				setError('Network error. Please try again.');
+			});
+	}, []);
 	var toggleSidebar = useCallback(function () {
 		setSidebarExpanded(function (prev) { return !prev; });
 	}, []);
@@ -449,7 +480,7 @@ function WooInsightDashboard() {
 					: null,
 
 				// Result.
-				!isLoading ? renderResult({ insightData: insightData, question: question, handleAsk: handleAsk, isLoading: isLoading }) : null
+				!isLoading ? renderResult({ insightData: insightData, question: question, handleAsk: handleAsk, handleRefresh: handleRefresh, isLoading: isLoading }) : null
 			),
 
 			// Bottom input area.

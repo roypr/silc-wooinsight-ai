@@ -342,5 +342,79 @@ class SILC_WIA_Insights {
 		}
 
 		return $config;
+		return $config;
+	}
+
+	/**
+	 * Re-execute a stored SQL query using the original insight config.
+	 * No AI call — just re-runs the SQL and re-renders with the same formatting.
+	 *
+	 * @param string $sql          The SQL to execute.
+	 * @param string $type         The result type (chart, list, answer).
+	 * @param array  $insight_data Stored insight config (chart_config, list_config, answer_text, etc.).
+	 * @return array The complete insight response.
+	 */
+	public static function re_execute_sql( string $sql, string $type, array $insight_data ): array {
+		// Validate SQL.
+		$validation = SILC_WIA_SQL_Validator::validate( $sql );
+		if ( ! $validation['valid'] ) {
+			return array(
+				'success' => false,
+				'error'   => $validation['error'],
+				'type'    => 'error',
+				'sql'     => $sql,
+			);
+		}
+
+		// Execute SQL.
+		$execution = SILC_WIA_SQL_Validator::execute( $validation['sql'] );
+		if ( ! $execution['success'] ) {
+			return array(
+				'success' => false,
+				'error'   => sprintf(
+					/* translators: %s: database error */
+					__( 'Query error: %s', 'silc-wooinsight-ai' ),
+					$execution['error']
+				),
+				'type' => 'error',
+				'sql'  => $validation['sql'],
+			);
+		}
+
+		$data       = $execution['data'] ?? array();
+		$columns    = ! empty( $data ) ? array_keys( $data[0] ) : array();
+		$sql_time   = $execution['time_ms'] ?? 0;
+		$rows_count = $execution['rows'] ?? count( $data );
+
+		// If empty data, return empty response.
+		if ( empty( $data ) ) {
+			return array(
+				'success'       => true,
+				'type'          => $type,
+				'sql'           => $validation['sql'],
+				'sql_time_ms'   => $sql_time,
+				'rows_returned' => 0,
+				'empty'         => true,
+				'empty_message' => __( 'No results found.', 'silc-wooinsight-ai' ),
+				'columns'       => array(),
+				'chart_config'  => null,
+				'list_data'     => null,
+				'list_config'   => null,
+				'answer_text'   => null,
+				'answer_value'  => null,
+				'answer_label'  => null,
+			);
+		}
+
+		// Render using stored config.
+		$response = self::render_by_type( $data, $insight_data, $type, '' );
+
+		$response['sql']           = $validation['sql'];
+		$response['sql_time_ms']   = $sql_time;
+		$response['rows_returned'] = $rows_count;
+		$response['columns']       = $columns;
+		$response['question']      = '';
+
+		return $response;
 	}
 }

@@ -131,11 +131,13 @@ export function renderAnswerResult(insightData) {
  * @param {Object|null} props.insightData
  * @param {string}   props.question
  * @param {Function} props.handleAsk
+ * @param {Function} props.handleRefresh
  * @param {boolean}  props.isLoading
  * @return {Object|null} Element.
  */
 export function renderResult(props) {
 	var insightData = props.insightData;
+	var handleRefresh = props.handleRefresh;
 	if (!insightData) return null;
 
 	var parts = [];
@@ -148,12 +150,13 @@ export function renderResult(props) {
 			el('div', { key: 'title', className: 'silc-wia-result-title' }, insightData.title)
 		);
 	}
-
 	// Refresh button.
 	if (insightData.sql) {
 		titleBarItems.push(
 			el(Button, {
 				key: 'refresh',
+				onClick: function () { handleRefresh(insightData); },
+				disabled: props.isLoading,
 			}, props.isLoading
 				? el(Spinner, {})
 				: el('span', { className: 'silc-wia-btn-content' },
