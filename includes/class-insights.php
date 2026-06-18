@@ -174,6 +174,7 @@ class SILC_WIA_Insights {
 		$response = array(
 			'success' => true,
 			'type'    => $type,
+			'title'   => $insight_data['title'] ?? '',
 		);
 
 		switch ( $type ) {
