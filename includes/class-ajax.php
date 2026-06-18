@@ -285,7 +285,7 @@ class SILC_WIA_Ajax {
 
 		delete_option( 'silc_wia_insight_history' );
 
-\twp_send_json_success( array(
+		wp_send_json_success( array(
 			'message' => __( 'Insight history cleared.', 'silc-wooinsight-ai' ),
 		) );
 	}
