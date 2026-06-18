@@ -450,6 +450,9 @@ class SILC_WIA_Insight_Renderer {
 			$formatted = $currency . number_format( (float) $value, 2 );
 		} elseif ( $is_count && is_numeric( $value ) ) {
 			$formatted = number_format( (int) $value );
+		} elseif ( is_numeric( $value ) && false !== strpos( (string) $value, '.' ) ) {
+			// Float value: format with exactly 2 decimal places.
+			$formatted = number_format( (float) $value, 2 );
 		} else {
 			$formatted = (string) $value;
 		}
