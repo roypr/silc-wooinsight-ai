@@ -445,7 +445,7 @@ class SILC_WIA_Insight_Renderer {
 
 		if ( $is_currency && is_numeric( $value ) ) {
 			$currency = function_exists( 'get_woocommerce_currency_symbol' )
-				? get_woocommerce_currency_symbol()
+				? html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' )
 				: '$';
 			$formatted = $currency . number_format( (float) $value, 2 );
 		} elseif ( $is_count && is_numeric( $value ) ) {
