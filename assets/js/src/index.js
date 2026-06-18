@@ -247,6 +247,7 @@ function WooInsightDashboard() {
 			chart_config: insightData.chart_config ? JSON.stringify(insightData.chart_config) : '',
 			list_config: insightData.list_config ? JSON.stringify(insightData.list_config) : '',
 			answer_text: insightData.answer_text || '',
+			title: insightData.title || '',
 		})
 			.then(function (resp) {
 				setLoading(false);
