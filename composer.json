@@ -1,0 +1,15 @@
+{
+	"name": "silc/silc-wooinsight-ai",
+	"description": "Natural language to SQL query tool for WooCommerce.",
+	"type": "wordpress-plugin",
+	"license": "GPL-2.0-or-later",
+	"require": {
+		"yahnis-elsts/plugin-update-checker": "^5.5"
+	},
+	"config": {
+		"platform": {
+			"php": "7.4"
+		},
+		"allow-plugins": false
+	}
+}

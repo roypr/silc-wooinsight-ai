@@ -3,7 +3,7 @@
  * Plugin Name: SILC WooInsight AI
  * Plugin URI:  https://github.com/roypr/silc-wooinsight-ai
  * Description: Natural language to SQL query tool for WooCommerce. Uses any OpenAI-compatible API (BYOK) to convert plain English questions into SQL queries against WooCommerce data.
- * Version:     1.0.0
+ * Version:     2.0.0
  * Author:      SILC
  * Text Domain: silc-wooinsight-ai
  * Domain Path: /languages
@@ -25,6 +25,14 @@ define( 'SILC_WIA_VERSION', '2.0.0' );
 define( 'SILC_WIA_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SILC_WIA_URL', plugin_dir_url( __FILE__ ) );
 define( 'SILC_WIA_BASENAME', plugin_basename( __FILE__ ) );
+
+/**
+ * Load Composer autoloader if available (for plugin-update-checker).
+ */
+$autoloader = SILC_WIA_PATH . 'vendor/autoload.php';
+if ( file_exists( $autoloader ) ) {
+	require_once $autoloader;
+}
 
 /**
  * Initialize the plugin after WooCommerce is loaded.
@@ -50,6 +58,28 @@ add_action( 'plugins_loaded', function () {
 	// Initialize.
 	SILC_WIA_Admin::init();
 	SILC_WIA_Ajax::init();
+} );
+
+/**
+ * Initialize the plugin update checker.
+ *
+ * Checks for updates against the GitHub releases feed using
+ * yahnis-elsts/plugin-update-checker library (loaded via Composer).
+ * Runs early but after the autoloader is loaded.
+ */
+add_action( 'init', function () {
+	if ( ! class_exists( 'YahnisElsts\\PluginUpdateChecker\\v5p7\\PucFactory' ) ) {
+		return;
+	}
+
+	$update_checker = YahnisElsts\PluginUpdateChecker\v5p7\PucFactory::buildUpdateChecker(
+		'https://github.com/roypr/silc-wooinsight-ai',
+		SILC_WIA_PATH . 'silc-wooinsight-ai.php',
+		'silc-wooinsight-ai'
+	);
+
+	// Use GitHub releases for update metadata.
+	$update_checker->getVcsApi()->enableReleaseAssets();
 } );
 
 /**
