@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: SILC WooInsight AI
- * Plugin URI:  https://silc.com/plugins/wooinsight-ai
+ * Plugin URI:  https://github.com/roypr/silc-wooinsight-ai
  * Description: Natural language to SQL query tool for WooCommerce. Uses any OpenAI-compatible API (BYOK) to convert plain English questions into SQL queries against WooCommerce data.
  * Version:     1.0.0
  * Author:      SILC
@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Plugin constants.
-define( 'SILC_WIA_VERSION', '1.0.0' );
+define( 'SILC_WIA_VERSION', '2.0.0' );
 define( 'SILC_WIA_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SILC_WIA_URL', plugin_dir_url( __FILE__ ) );
 define( 'SILC_WIA_BASENAME', plugin_basename( __FILE__ ) );
@@ -44,6 +44,8 @@ add_action( 'plugins_loaded', function () {
 	require_once SILC_WIA_PATH . 'includes/class-api.php';
 	require_once SILC_WIA_PATH . 'includes/class-admin.php';
 	require_once SILC_WIA_PATH . 'includes/class-ajax.php';
+	require_once SILC_WIA_PATH . 'includes/class-insight-renderer.php';
+	require_once SILC_WIA_PATH . 'includes/class-insights.php';
 
 	// Initialize.
 	SILC_WIA_Admin::init();
@@ -69,20 +71,14 @@ register_activation_hook( __FILE__, function () {
  * Deactivation hook - cleanup.
  */
 register_deactivation_hook( __FILE__, function () {
-	delete_option( 'silc_wia_query_history' );
+	delete_option( 'silc_wia_insight_history' );
+	delete_option( 'silc_wia_insight_cache' );
 } );
 
 /**
  * Add settings link on the plugins page.
  */
 add_filter( 'plugin_action_links_' . SILC_WIA_BASENAME, function ( $links ) {
-	$settings_link = sprintf(
-		'<a href="%s">%s</a>',
-		esc_url( admin_url( 'admin.php?page=silc-wooinsight-ai-settings' ) ),
-		esc_html__( 'AI Settings', 'silc-wooinsight-ai' )
-	);
-	array_unshift( $links, $settings_link );
-
 	$dashboard_link = sprintf(
 		'<a href="%s">%s</a>',
 		esc_url( admin_url( 'admin.php?page=silc-wooinsight-ai' ) ),

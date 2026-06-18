@@ -2,10 +2,8 @@
 /**
  * AJAX Handler
  *
- * Handles AJAX requests from the React dashboard for:
- * - Executing validated SQL queries (with or without AI generation).
- * - Fetching schema context for the AI prompt.
- * - Saving/loading query history.
+ * Handles AJAX requests from the React dashboard for insight generation
+ * and schema retrieval.
  *
  * @package SILC_WooInsight_AI
  */
@@ -14,7 +12,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-require_once SILC_WIA_PATH . 'includes/class-sql-validator.php';
 require_once SILC_WIA_PATH . 'includes/class-woo-schema.php';
 
 /**
@@ -24,23 +21,23 @@ class SILC_WIA_Ajax {
 
 	/**
 	 * Nonce action.
+	 *
+	 * @var string
 	 */
-	const NONCE_ACTION = 'silc_wia_ajax';
+	const NONCE_ACTION = 'silc-wia-nonce';
 
 	/**
-	 * Initialize AJAX hooks.
+	 * Register all AJAX handlers.
 	 */
 	public static function init(): void {
-		add_action( 'wp_ajax_silc_wia_execute_query', array( __CLASS__, 'handle_execute_query' ) );
+		// Schema endpoint (used by insight pipeline).
 		add_action( 'wp_ajax_silc_wia_get_schema', array( __CLASS__, 'handle_get_schema' ) );
-		add_action( 'wp_ajax_silc_wia_get_tables', array( __CLASS__, 'handle_get_tables' ) );
-		add_action( 'wp_ajax_silc_wia_save_history', array( __CLASS__, 'handle_save_history' ) );
-		add_action( 'wp_ajax_silc_wia_get_history', array( __CLASS__, 'handle_get_history' ) );
-		add_action( 'wp_ajax_silc_wia_clear_history', array( __CLASS__, 'handle_clear_history' ) );
-		add_action( 'wp_ajax_silc_wia_validate_sql', array( __CLASS__, 'handle_validate_sql' ) );
-		add_action( 'wp_ajax_silc_wia_generate_sql', array( __CLASS__, 'handle_generate_sql' ) );
+		// Insight endpoints.
+		add_action( 'wp_ajax_silc_wia_generate_insight', array( __CLASS__, 'handle_generate_insight' ) );
+		add_action( 'wp_ajax_silc_wia_regen_insight', array( __CLASS__, 'handle_regen_insight' ) );
+		add_action( 'wp_ajax_silc_wia_get_insight_history', array( __CLASS__, 'handle_get_insight_history' ) );
+		add_action( 'wp_ajax_silc_wia_clear_insight_history', array( __CLASS__, 'handle_clear_insight_history' ) );
 	}
-
 	/**
 	 * Verify nonce and user capabilities.
 	 */
@@ -56,58 +53,6 @@ class SILC_WIA_Ajax {
 		}
 
 		return true;
-	}
-
-	/**
-	 * Handle: Execute a validated SQL query.
-	 *
-	 * Accepts raw SQL (already validated client-side or AI-generated).
-	 * Server re-validates before execution.
-	 */
-	public static function handle_execute_query(): void {
-		if ( ! self::verify() ) {
-			return;
-		}
-
-		$sql = isset( $_POST['sql'] ) ? wp_unslash( $_POST['sql'] ) : '';
-		$sql = trim( $sql );
-
-		if ( empty( $sql ) ) {
-			wp_send_json_error( array( 'message' => __( 'No SQL query provided.', 'silc-wooinsight-ai' ) ) );
-			return;
-		}
-
-		// Validate the SQL on the server side (defense in depth).
-		$validation = SILC_WIA_SQL_Validator::validate( $sql );
-		if ( ! $validation['valid'] ) {
-			wp_send_json_error( array(
-				'message' => $validation['error'],
-				'sql'     => $validation['sql'],
-			) );
-			return;
-		}
-
-		// Execute.
-		$result = SILC_WIA_SQL_Validator::execute( $validation['sql'] );
-
-		if ( ! $result['success'] ) {
-			wp_send_json_error( array(
-				'message' => sprintf(
-					/* translators: %s: database error */
-					__( 'Query error: %s', 'silc-wooinsight-ai' ),
-					$result['error']
-				),
-				'sql'     => $validation['sql'],
-			) );
-			return;
-		}
-
-		wp_send_json_success( array(
-			'data'    => $result['data'],
-			'sql'     => $validation['sql'],
-			'time_ms' => $result['time_ms'],
-			'rows'    => $result['rows'] ?? count( $result['data'] ),
-		) );
 	}
 
 	/**
@@ -129,127 +74,18 @@ class SILC_WIA_Ajax {
 		) );
 	}
 
-	/**
-	 * Handle: Get simplified table list for dropdowns.
-	 */
-	public static function handle_get_tables(): void {
-		if ( ! self::verify() ) {
-			return;
-		}
-
-		global $wpdb;
-		$prefix     = $wpdb->prefix;
-		$tables     = array();
-		$all_tables = $wpdb->get_results( "SHOW TABLES LIKE '{$prefix}%'", ARRAY_N );
-
-		foreach ( $all_tables as $row ) {
-			$tables[] = $row[0];
-		}
-
-		wp_send_json_success( array(
-			'tables'  => $tables,
-			'prefix'  => $prefix,
-		) );
-	}
+	// ----------------------------------------------------------------------- //
+	//  INSIGHT ENDPOINTS
+	// ----------------------------------------------------------------------- //
 
 	/**
-	 * Handle: Save a query to history.
-	 */
-	public static function handle_save_history(): void {
-		if ( ! self::verify() ) {
-			return;
-		}
-
-		$question = isset( $_POST['question'] ) ? sanitize_text_field( wp_unslash( $_POST['question'] ) ) : '';
-		$sql      = isset( $_POST['sql'] ) ? sanitize_textarea_field( wp_unslash( $_POST['sql'] ) ) : '';
-		$label    = isset( $_POST['label'] ) ? sanitize_text_field( wp_unslash( $_POST['label'] ) ) : '';
-
-		if ( empty( $sql ) ) {
-			wp_send_json_error( array( 'message' => __( 'No SQL to save.', 'silc-wooinsight-ai' ) ) );
-			return;
-		}
-
-		$history   = get_option( 'silc_wia_query_history', array() );
-		$history[] = array(
-			'id'       => uniqid( 'q_' ),
-			'question' => $question,
-			'sql'      => $sql,
-			'label'    => $label,
-			'time'     => current_time( 'mysql' ),
-		);
-
-		// Keep last 50 entries.
-		if ( count( $history ) > 50 ) {
-			$history = array_slice( $history, -50 );
-		}
-
-		update_option( 'silc_wia_query_history', $history );
-
-		wp_send_json_success( array(
-			'message' => __( 'Query saved to history.', 'silc-wooinsight-ai' ),
-			'history' => array_reverse( $history ),
-		) );
-	}
-
 	/**
-	 * Handle: Get query history.
+	 * Handle: Generate a full insight (AI → SQL → execute → render).
+	 *
+	 * POST params: question (string)
+	 * Response: { success, data: { type, chart_config, list_data, answer_text, ... } }
 	 */
-	public static function handle_get_history(): void {
-		if ( ! self::verify() ) {
-			return;
-		}
-
-		$history = get_option( 'silc_wia_query_history', array() );
-
-		wp_send_json_success( array(
-			'history' => array_reverse( $history ),
-		) );
-	}
-
-	/**
-	 * Handle: Clear query history.
-	 */
-	public static function handle_clear_history(): void {
-		if ( ! self::verify() ) {
-			return;
-		}
-
-		delete_option( 'silc_wia_query_history' );
-
-		wp_send_json_success( array(
-			'message' => __( 'History cleared.', 'silc-wooinsight-ai' ),
-		) );
-	}
-
-	/**
-	 * Handle: Validate SQL without executing it.
-	 */
-	public static function handle_validate_sql(): void {
-		if ( ! self::verify() ) {
-			return;
-		}
-
-		$sql = isset( $_POST['sql'] ) ? wp_unslash( $_POST['sql'] ) : '';
-		$sql = trim( $sql );
-
-		if ( empty( $sql ) ) {
-			wp_send_json_error( array( 'message' => __( 'No SQL provided.', 'silc-wooinsight-ai' ) ) );
-			return;
-		}
-
-		$validation = SILC_WIA_SQL_Validator::validate( $sql );
-
-		wp_send_json_success( array(
-			'valid' => $validation['valid'],
-			'sql'   => $validation['sql'],
-			'error' => $validation['error'],
-		) );
-	}
-
-	/**
-	 * Handle: Generate SQL from natural language using the configured API.
-	 */
-	public static function handle_generate_sql(): void {
+	public static function handle_generate_insight(): void {
 		if ( ! self::verify() ) {
 			return;
 		}
@@ -262,23 +98,194 @@ class SILC_WIA_Ajax {
 			return;
 		}
 
-		// Get schema context.
-		$schema_context = SILC_WIA_Woo_Schema::get_schema_context();
+		require_once SILC_WIA_PATH . 'includes/class-insights.php';
 
-		// Call the API.
-		require_once SILC_WIA_PATH . 'includes/class-api.php';
-		$result = SILC_WIA_API::generate_sql( $question, $schema_context );
+		$insight = SILC_WIA_Insights::generate_insight( $question );
 
-		if ( $result['success'] ) {
-			wp_send_json_success( array(
-				'sql'      => $result['sql'],
-				'question' => $question,
-			) );
-		} else {
+		if ( ! $insight['success'] ) {
 			wp_send_json_error( array(
-				'message'  => $result['error'],
+				'message'  => $insight['error'] ?? __( 'Failed to generate insight.', 'silc-wooinsight-ai' ),
 				'question' => $question,
 			) );
+			return;
 		}
+
+		// Save to insight history with full result data and AI-generated title.
+		$title = ! empty( $insight['title'] ) ? $insight['title'] : self::derive_title( $question, $insight );
+
+		$history    = get_option( 'silc_wia_insight_history', array() );
+		$history[]  = array(
+			'id'            => uniqid( 'i_' ),
+			'question'      => $question,
+			'title'         => $title,
+			'type'          => $insight['type'],
+			'sql'           => $insight['sql'] ?? '',
+			'sql_time_ms'   => $insight['sql_time_ms'] ?? 0,
+			'rows_returned' => $insight['rows_returned'] ?? 0,
+			'columns'       => $insight['columns'] ?? array(),
+			'time'          => current_time( 'mysql' ),
+			// Full result data for instant replay from history.
+			'chart_config'  => $insight['chart_config'] ?? null,
+			'list_data'     => $insight['list_data'] ?? null,
+			'list_config'   => $insight['list_config'] ?? null,
+			'answer_text'   => $insight['answer_text'] ?? null,
+			'answer_value'  => $insight['answer_value'] ?? null,
+			'answer_label'  => $insight['answer_label'] ?? null,
+			'empty'         => $insight['empty'] ?? null,
+			'empty_message' => $insight['empty_message'] ?? null,
+		);
+		// Keep max 10 latest entries.
+		if ( count( $history ) > 10 ) {
+			$history = array_slice( $history, -10 );
+		}
+		update_option( 'silc_wia_insight_history', $history );
+
+		// Include title in response.
+		$insight['title'] = $title;
+
+		wp_send_json_success( $insight );
+	}
+
+	/**
+	 * Derive a display title from the question or insight data.
+	 *
+	 * @param string $question The original question.
+	 * @param array  $insight  The generated insight data.
+	 * @return string
+	 */
+	private static function derive_title( string $question, array $insight ): string {
+		// Use chart title if available.
+		if ( ! empty( $insight['chart_config']['title'] ) ) {
+			return $insight['chart_config']['title'];
+		}
+		// Use answer_text prefix (first ~50 chars) for answer type.
+		if ( ! empty( $insight['answer_text'] ) ) {
+			$short = substr( $insight['answer_text'], 0, 50 );
+			return rtrim( $short, ' .' ) . ( strlen( $insight['answer_text'] ) > 50 ? '...' : '' );
+		}
+		// Fallback: use first 60 chars of the question.
+		return mb_substr( $question, 0, 60 ) . ( mb_strlen( $question ) > 60 ? '...' : '' );
+	}
+
+	/**
+	 * Handle: Regenerate an insight from a previous question (re-runs full pipeline).
+	 *
+	 * POST params: question (string)
+	 * Response: Same as handle_generate_insight.
+	 */
+	public static function handle_regen_insight(): void {
+		if ( ! self::verify() ) {
+			return;
+		}
+
+		$question = isset( $_POST['question'] ) ? sanitize_text_field( wp_unslash( $_POST['question'] ) ) : '';
+		$question = trim( $question );
+
+		if ( empty( $question ) ) {
+			wp_send_json_error( array( 'message' => __( 'No question provided.', 'silc-wooinsight-ai' ) ) );
+			return;
+		}
+
+		require_once SILC_WIA_PATH . 'includes/class-insights.php';
+
+		$insight = SILC_WIA_Insights::generate_insight( $question );
+
+		if ( ! $insight['success'] ) {
+			wp_send_json_error( array(
+				'message'  => $insight['error'] ?? __( 'Failed to regenerate insight.', 'silc-wooinsight-ai' ),
+				'question' => $question,
+			) );
+			return;
+		}
+
+		// Update the existing history entry if found, or append a new one.
+		$title   = ! empty( $insight['title'] ) ? $insight['title'] : self::derive_title( $question, $insight );
+		$history = get_option( 'silc_wia_insight_history', array() );
+
+		// Look for an existing entry with the same question and update it.
+		$found = false;
+		foreach ( $history as &$entry ) {
+			if ( $entry['question'] === $question ) {
+				$entry['title']         = $title;
+				$entry['type']          = $insight['type'];
+				$entry['sql']           = $insight['sql'] ?? '';
+				$entry['sql_time_ms']   = $insight['sql_time_ms'] ?? 0;
+				$entry['rows_returned'] = $insight['rows_returned'] ?? 0;
+				$entry['columns']       = $insight['columns'] ?? array();
+				$entry['time']          = current_time( 'mysql' );
+				$entry['chart_config']  = $insight['chart_config'] ?? null;
+				$entry['list_data']     = $insight['list_data'] ?? null;
+				$entry['list_config']   = $insight['list_config'] ?? null;
+				$entry['answer_text']   = $insight['answer_text'] ?? null;
+				$entry['answer_value']  = $insight['answer_value'] ?? null;
+				$entry['answer_label']  = $insight['answer_label'] ?? null;
+				$entry['empty']         = $insight['empty'] ?? null;
+				$entry['empty_message'] = $insight['empty_message'] ?? null;
+				$found = true;
+				break;
+			}
+		}
+		unset( $entry );
+
+		if ( ! $found ) {
+			$history[] = array(
+				'id'            => uniqid( 'i_' ),
+				'question'      => $question,
+				'title'         => $title,
+				'type'          => $insight['type'],
+				'sql'           => $insight['sql'] ?? '',
+				'sql_time_ms'   => $insight['sql_time_ms'] ?? 0,
+				'rows_returned' => $insight['rows_returned'] ?? 0,
+				'columns'       => $insight['columns'] ?? array(),
+				'time'          => current_time( 'mysql' ),
+				'chart_config'  => $insight['chart_config'] ?? null,
+				'list_data'     => $insight['list_data'] ?? null,
+				'list_config'   => $insight['list_config'] ?? null,
+				'answer_text'   => $insight['answer_text'] ?? null,
+				'answer_value'  => $insight['answer_value'] ?? null,
+				'answer_label'  => $insight['answer_label'] ?? null,
+				'empty'         => $insight['empty'] ?? null,
+				'empty_message' => $insight['empty_message'] ?? null,
+			);
+		}
+
+		// Keep max 10 latest entries.
+		if ( count( $history ) > 10 ) {
+			$history = array_slice( $history, -10 );
+		}
+		update_option( 'silc_wia_insight_history', $history );
+
+		$insight['title'] = $title;
+		wp_send_json_success( $insight );
+	}
+
+	/**
+	 * Handle: Get insight history.
+	 */
+	public static function handle_get_insight_history(): void {
+		if ( ! self::verify() ) {
+			return;
+		}
+
+		$history = get_option( 'silc_wia_insight_history', array() );
+
+		wp_send_json_success( array(
+			'history' => array_reverse( $history ),
+		) );
+	}
+
+	/**
+	 * Handle: Clear insight history.
+	 */
+	public static function handle_clear_insight_history(): void {
+		if ( ! self::verify() ) {
+			return;
+		}
+
+		delete_option( 'silc_wia_insight_history' );
+
+		wp_send_json_success( array(
+			'message' => __( 'Insight history cleared.', 'silc-wooinsight-ai' ),
+		) );
 	}
 }

@@ -146,7 +146,7 @@ class SILC_WIA_SQL_Validator {
 	private static function check_tables( string $sql ): array {
 		global $wpdb;
 		$prefix  = $wpdb->prefix;
-		$allowed = SILC_WIA_Woo_Schema::get_table_names();
+		$allowed = SILC_WIA_Woo_Schema::get_active_table_names();
 
 		// Build full prefixed whitelist.
 		$whitelist = array( $prefix . 'woocommerce_order_items', $prefix . 'woocommerce_order_itemmeta' );
@@ -273,7 +273,7 @@ class SILC_WIA_SQL_Validator {
 		$prefix = $wpdb->prefix;
 		if ( ! preg_match( '/\b' . preg_quote( $prefix, '/' ) . '/', $sql ) ) {
 			// Try to add prefix to un-prefixed WooCommerce table names.
-			$tables = SILC_WIA_Woo_Schema::get_table_names();
+			$tables = SILC_WIA_Woo_Schema::get_active_table_names();
 			foreach ( $tables as $table ) {
 				$sql = preg_replace(
 					'/\b' . preg_quote( $table, '/' ) . '\b(?!\s*\.)/',
