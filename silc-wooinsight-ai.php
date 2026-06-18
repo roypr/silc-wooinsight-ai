@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: SILC WooInsight AI
- * Plugin URI:  https://silc.com/plugins/wooinsight-ai
+ * Plugin URI:  https://github.com/roypr/silc-wooinsight-ai
  * Description: Natural language to SQL query tool for WooCommerce. Uses any OpenAI-compatible API (BYOK) to convert plain English questions into SQL queries against WooCommerce data.
  * Version:     1.0.0
  * Author:      SILC
