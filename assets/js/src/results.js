@@ -117,11 +117,36 @@ export function renderAnswerResult(insightData) {
 	var answerValue = insightData.answer_value || '';
 	var answerLabel = insightData.answer_label || '';
 
+	var displayText;
+	if (answerText && answerLabel && answerText.indexOf('{{' + answerLabel + '}}') !== -1) {
+		// Replace {{answerLabel}} placeholder with the actual answer value.
+		displayText = answerText.replace('{{' + answerLabel + '}}', answerValue);
+	} else {
+		// If no proper placeholder found, just show the value without context.
+		displayText = answerValue;
+	}
+
 	return el('div', { className: 'silc-wia-result-answer', key: 'answer' },
-		answerValue ? el('div', { className: 'silc-wia-result-answer-value' }, String(answerValue)) : null,
-		answerLabel ? el('div', { className: 'silc-wia-result-answer-label' }, String(answerLabel)) : null,
-		answerText ? el('div', { className: 'silc-wia-result-answer-text' }, answerText) : null
+		displayText ? el('div', { className: 'silc-wia-result-answer-text' }, String(displayText)) : null
 	);
+}
+
+/**
+ * Apply placeholder replacement to a title string.
+ * If the title contains a {{column_name}} pattern, replace it with answerValue.
+ * Otherwise return the raw title.
+ *
+ * @param {string} title
+ * @param {string} answerValue
+ * @return {string}
+ */
+function resolveTitle(title, answerValue) {
+	if (!title) return '';
+	var match = title.match(/\{\{(.+?)\}\}/);
+	if (match) {
+		return title.replace(match[0], answerValue || '');
+	}
+	return title;
 }
 
 /**
@@ -146,8 +171,9 @@ export function renderResult(props) {
 	var titleBarItems = [];
 
 	if (insightData.title) {
+		var resolvedTitle = resolveTitle(insightData.title, insightData.answer_value);
 		titleBarItems.push(
-			el('div', { key: 'title', className: 'silc-wia-result-title' }, insightData.title)
+			el('div', { key: 'title', className: 'silc-wia-result-title' }, resolvedTitle)
 		);
 	}
 	// Refresh button.
