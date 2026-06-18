@@ -311,22 +311,26 @@ class SILC_WIA_Ajax {
 
 		$type = isset( $_POST['type'] ) ? sanitize_text_field( wp_unslash( $_POST['type'] ) ) : 'answer';
 
-		// Rebuild insight config from the stored data sent from frontend.
 		$insight_data = array();
 
-		$chart_config = isset( $_POST['chart_config'] ) ? json_decode( wp_unslash( $_POST['chart_config'] ), true ) : null;
-		if ( is_array( $chart_config ) ) {
-			$insight_data['chart_config'] = $chart_config;
+		$chart_config = isset( $_POST['chart_config'] ) ? wp_unslash( $_POST['chart_config'] ) : '';
+		if ( ! empty( $chart_config ) ) {
+			$insight_data['chart_config'] = json_decode( $chart_config, true );
 		}
 
-		$list_config = isset( $_POST['list_config'] ) ? json_decode( wp_unslash( $_POST['list_config'] ), true ) : null;
-		if ( is_array( $list_config ) ) {
-			$insight_data['list_config'] = $list_config;
+		$list_config = isset( $_POST['list_config'] ) ? wp_unslash( $_POST['list_config'] ) : '';
+		if ( ! empty( $list_config ) ) {
+			$insight_data['list_config'] = json_decode( $list_config, true );
 		}
 
 		$answer_text = isset( $_POST['answer_text'] ) ? sanitize_text_field( wp_unslash( $_POST['answer_text'] ) ) : '';
 		if ( ! empty( $answer_text ) ) {
 			$insight_data['answer_text'] = $answer_text;
+		}
+
+		$title = isset( $_POST['title'] ) ? sanitize_text_field( wp_unslash( $_POST['title'] ) ) : '';
+		if ( ! empty( $title ) ) {
+			$insight_data['title'] = $title;
 		}
 
 		require_once SILC_WIA_PATH . 'includes/class-insights.php';
@@ -339,6 +343,11 @@ class SILC_WIA_Ajax {
 				'sql'     => $sql,
 			) );
 			return;
+		}
+
+		// Ensure title is present in the response.
+		if ( empty( $result['title'] ) && ! empty( $title ) ) {
+			$result['title'] = $title;
 		}
 
 		wp_send_json_success( $result );
