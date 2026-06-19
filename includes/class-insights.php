@@ -63,6 +63,18 @@ class SILC_WIA_Insights {
 		}
 
 		$insight_data = $ai_result['insight'];
+
+		// Check if AI returned an error_code (forbidden / out-of-scope).
+		if ( ! empty( $insight_data['error_code'] ) ) {
+			$response = array(
+				'success'    => false,
+				'error_code' => $insight_data['error_code'],
+				'error'      => $insight_data['error_message'] ?? self::get_error_message( $insight_data['error_code'] ),
+				'type'       => 'error',
+			);
+			return $response;
+		}
+
 		$sql          = $insight_data['sql'] ?? '';
 		$type         = $insight_data['type'] ?? 'answer';
 
@@ -73,6 +85,7 @@ class SILC_WIA_Insights {
 				'success' => false,
 				'error'   => $validation['error'],
 				'type'    => 'error',
+				'error_code' => 'SQL_VALIDATION',
 				'sql'     => $sql,
 			);
 			return $response;
@@ -90,6 +103,7 @@ class SILC_WIA_Insights {
 					$execution['error']
 				),
 				'type' => 'error',
+				'error_code' => 'QUERY_ERROR',
 				'sql'  => $validation['sql'],
 			);
 			return $response;
@@ -128,6 +142,25 @@ class SILC_WIA_Insights {
 		}
 
 		return $response;
+	}
+
+	/**
+	 * Get a user-friendly error message for a given error code.
+	 *
+	 * @param string $error_code The error code.
+	 * @return string
+	 */
+	public static function get_error_message( string $error_code ): string {
+		switch ( $error_code ) {
+			case 'FORBIDDEN':
+				return __( 'This action is not allowed. I can only answer questions about your store data — I cannot modify or delete anything.', 'silc-wooinsight-ai' );
+			case 'OUT_OF_SCOPE':
+				return __( 'I can only help with WooCommerce store questions. Try asking about sales, products, orders, or customers.', 'silc-wooinsight-ai' );
+			case 'NOT_WOOCOMMERCE':
+				return __( 'I only work with WooCommerce store data. That request involves non-store content I cannot access.', 'silc-wooinsight-ai' );
+			default:
+				return __( 'Unable to process this request.', 'silc-wooinsight-ai' );
+		}
 	}
 
 	/**
@@ -174,6 +207,7 @@ class SILC_WIA_Insights {
 		$response = array(
 			'success' => true,
 			'type'    => $type,
+			'title'   => $insight_data['title'] ?? '',
 		);
 
 		switch ( $type ) {
@@ -342,5 +376,79 @@ class SILC_WIA_Insights {
 		}
 
 		return $config;
+		return $config;
+	}
+
+	/**
+	 * Re-execute a stored SQL query using the original insight config.
+	 * No AI call — just re-runs the SQL and re-renders with the same formatting.
+	 *
+	 * @param string $sql          The SQL to execute.
+	 * @param string $type         The result type (chart, list, answer).
+	 * @param array  $insight_data Stored insight config (chart_config, list_config, answer_text, etc.).
+	 * @return array The complete insight response.
+	 */
+	public static function re_execute_sql( string $sql, string $type, array $insight_data ): array {
+		// Validate SQL.
+		$validation = SILC_WIA_SQL_Validator::validate( $sql );
+		if ( ! $validation['valid'] ) {
+			return array(
+				'success' => false,
+				'error'   => $validation['error'],
+				'type'    => 'error',
+				'sql'     => $sql,
+			);
+		}
+
+		// Execute SQL.
+		$execution = SILC_WIA_SQL_Validator::execute( $validation['sql'] );
+		if ( ! $execution['success'] ) {
+			return array(
+				'success' => false,
+				'error'   => sprintf(
+					/* translators: %s: database error */
+					__( 'Query error: %s', 'silc-wooinsight-ai' ),
+					$execution['error']
+				),
+				'type' => 'error',
+				'sql'  => $validation['sql'],
+			);
+		}
+
+		$data       = $execution['data'] ?? array();
+		$columns    = ! empty( $data ) ? array_keys( $data[0] ) : array();
+		$sql_time   = $execution['time_ms'] ?? 0;
+		$rows_count = $execution['rows'] ?? count( $data );
+
+		// If empty data, return empty response.
+		if ( empty( $data ) ) {
+			return array(
+				'success'       => true,
+				'type'          => $type,
+				'sql'           => $validation['sql'],
+				'sql_time_ms'   => $sql_time,
+				'rows_returned' => 0,
+				'empty'         => true,
+				'empty_message' => __( 'No results found.', 'silc-wooinsight-ai' ),
+				'columns'       => array(),
+				'chart_config'  => null,
+				'list_data'     => null,
+				'list_config'   => null,
+				'answer_text'   => null,
+				'answer_value'  => null,
+				'answer_label'  => null,
+			);
+		}
+
+		// Render using stored config.
+		$response = self::render_by_type( $data, $insight_data, $type, '' );
+
+		$response['sql']           = $validation['sql'];
+		$response['sql_time_ms']   = $sql_time;
+		$response['rows_returned'] = $rows_count;
+		$response['columns']       = $columns;
+		$response['question']      = '';
+
+		return $response;
 	}
 }

@@ -1,12 +1,12 @@
 /**
- * SILC WooInsight AI — Side panel renderers (SQL, History, Guides, Suggested)
+ * SILC WooInsight AI — Side panel renderers (SQL, History, Library, Suggested)
  *
  * @package SILC_WooInsight_AI
  */
 
 /* global wp */
 
-import { l10n, GUIDE_SECTIONS, SUGGESTED_PROMPTS } from './utils.js';
+import { l10n, LIBRARY_ITEMS, SUGGESTED_PROMPTS } from './utils.js';
 
 var el = wp.element.createElement;
 var Button = wp.components.Button;
@@ -22,7 +22,7 @@ export function getPanelTitle(panel) {
 	var titles = {
 		sql: l10n.sqlDetails || 'SQL & Details',
 		history: l10n.history || 'History',
-		guides: l10n.guides || 'Guides',
+		library: l10n.library || 'Library',
 		suggested: l10n.suggestedPrompts || 'Suggested Prompts',
 		settings: l10n.settings || 'Settings',
 	};
@@ -146,95 +146,74 @@ export function renderHistoryPanel(props) {
 }
 
 /**
- * Render the Guides panel.
+ * Render the Library panel.
+ *
+ * Displays pre-built insight items that can be executed without AI.
+ * Supports regex search across item questions.
+ * On click: passes the full library item to handleLibraryItem which
+ * executes the SQL directly (same pipeline as the Refresh button).
  *
  * @param {Object}   props
- * @param {Function} props.setQuestion
- * @param {Function} props.setActivePanel
- * @param {Function} props.handleAsk
- * @param {string}   props.guideSearchQuery
- * @param {Function} props.setGuideSearchQuery
+ * @param {Function} props.handleLibraryItem  Called with the full library item.
+ * @param {string}   props.librarySearchQuery Current search string.
+ * @param {Function} props.setLibrarySearchQuery  Setter for search string.
  * @return {Object} Element.
  */
-export function renderGuidesPanel(props) {
-	var searchQuery = props.guideSearchQuery || '';
-	var setSearchQuery = props.setGuideSearchQuery;
+export function renderLibraryPanel(props) {
+	var searchQuery = props.librarySearchQuery || '';
+	var setSearchQuery = props.setLibrarySearchQuery;
 
 	var isSearching = searchQuery.trim().length > 0;
 
 	// Attempt to build a case-insensitive regex from the query.
-	var regex;
+	var regex = null;
 	var regexValid = true;
 	if (isSearching) {
 		try {
 			regex = new RegExp(searchQuery, 'i');
-		} catch (e) {
+		} catch (e) { // eslint-disable-line no-unused-vars
 			regexValid = false;
-			void e; // eslint-disable-line no-unused-vars
 		}
 	}
 
-	var sections = [];
-	var matchCount = 0;
+	// Filter items by search query.
+	var filteredItems = LIBRARY_ITEMS;
+	if (isSearching && regexValid) {
+		filteredItems = LIBRARY_ITEMS.filter(function (item) {
+			return regex.test(item.question) || regex.test(item.title);
+		});
+	}
 
-	GUIDE_SECTIONS.forEach(function (section, si) {
-		var showSection;
-		var showExamples;
+	// Build item elements.
+	var itemElements = filteredItems.map(function (item) {
+		var typeIcon = '';
+		if (item.type === 'chart') typeIcon = '\uD83D\uDCCA ';
+		else if (item.type === 'list') typeIcon = '\uD83D\uDCCB ';
+		else if (item.type === 'answer') typeIcon = '\u2139\uFE0F ';
 
-		if (!isSearching || !regexValid) {
-			// No search active or invalid regex — show everything.
-			showSection = true;
-			showExamples = section.examples;
-		} else {
-			var sectionHeaderMatch = regex.test(section.title) || regex.test(section.text);
-			var matchingExamples = section.examples.filter(function (ex) {
-				return regex.test(ex.text) || regex.test(ex.desc);
-			});
-
-			if (sectionHeaderMatch || matchingExamples.length > 0) {
-				showSection = true;
-				// If the section header itself matched, show all its examples;
-				// otherwise only the examples that matched.
-				showExamples = sectionHeaderMatch ? section.examples : matchingExamples;
-			}
-		}
-
-		if (showSection) {
-			matchCount++;
-
-			var examples = showExamples.map(function (ex, ei) {
-				return el('div', {
-					key: ei,
-					className: 'silc-wia-guide-example',
-					onClick: function () {
-						props.setQuestion(ex.text);
-						props.setActivePanel(null);
-						props.handleAsk(ex.text);
-					},
-				},
-					'\uD83D\uDC49 ' + ex.text,
-					el('span', { className: 'desc' }, ex.desc)
-				);
-			});
-
-			sections.push(
-				el('div', { key: si, className: 'silc-wia-guide-section' },
-					el('h3', null, section.title),
-					el('p', null, section.text),
-					examples
-				)
-			);
-		}
+		return el('div', {
+			key: item.id,
+			className: 'silc-wia-library-item',
+			onClick: function () {
+				props.handleLibraryItem(item);
+			},
+		},
+			el('span', { className: 'icon' }, typeIcon),
+			el('span', { className: 'text' }, item.question),
+			item.title
+				? el('span', { className: 'desc' }, item.title)
+				: null
+		);
 	});
 
 	// Search input + content.
 	return el('div', null,
 
 		// Search bar.
-		el('div', { className: 'silc-wia-guide-search', style: { marginBottom: '12px' } },
+		el('div', { className: 'silc-wia-library-search', style: { marginBottom: '12px' } },
 			el('input', {
 				type: 'text',
-				placeholder: 'Search guides (regex supported)...',
+				placeholder: 'Search library...',
 				value: searchQuery,
 				onChange: function (e) { setSearchQuery(e.target.value); },
 				style: { width: '100%', boxSizing: 'border-box' },
@@ -248,10 +227,10 @@ export function renderGuidesPanel(props) {
 			)
 			: null,
 
-		// No-match message or sections.
-		isSearching && regexValid && matchCount === 0
-			? el('p', { className: 'silc-wia-muted' }, 'No guides match "' + searchQuery + '".')
-			: sections
+		// No-match message or items.
+		isSearching && regexValid && filteredItems.length === 0
+			? el('p', { className: 'silc-wia-muted' }, 'No library items match "' + searchQuery + '".')
+			: el('div', { className: 'silc-wia-library-list' }, itemElements)
 	);
 }
 

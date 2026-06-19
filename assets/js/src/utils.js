@@ -58,6 +58,7 @@ export var l10n = data.l10n || {};
 export var settings = data.settings || {};
 export var defaults = data.defaults || {};
 export var apiConfigured = data.apiConfigured || false;
+export var pluginUrl = data.pluginUrl || '';
 export var pluginVersion = data.pluginVersion || '2.0.0';
 
 /**
@@ -73,47 +74,33 @@ export var SUGGESTED_PROMPTS = [
 ];
 
 /**
- * Guide sections for the Guides panel.
+ * Pre-built library items loaded from the server.
+ * Each item has the full AI-response format: id, question, sql, type,
+ * title, chart_config, list_config, answer_text.
  */
-export var GUIDE_SECTIONS = [
-	{
-		title: '\uD83D\uDCC8 Charts & Trends',
-		text: 'Ask about trends, comparisons, or distributions to get visual charts.',
-		examples: [
-			{ text: 'Best selling products by revenue this month', desc: 'Bar chart of top products' },
-			{ text: 'Monthly revenue trend this year', desc: 'Line chart showing month-by-month' },
-			{ text: 'Order status distribution', desc: 'Pie/doughnut chart' },
-			{ text: 'Sales by product category', desc: 'Bar chart of category sales' },
-			{ text: 'Daily orders for the past 7 days', desc: 'Line/bar chart' },
-		],
-	},
-	{
-		title: '\uD83D\uDCCB Lists & Details',
-		text: 'Ask for lists to see individual items with details and links.',
-		examples: [
-			{ text: 'Top 10 customers by total spending', desc: 'List with customer links' },
-			{ text: 'Recent orders with totals', desc: 'List of recent orders' },
-			{ text: 'Products low in stock', desc: 'Inventory list' },
-			{ text: 'Pending orders', desc: 'Order list filtered by status' },
-		],
-	},
-	{
-		title: '\u2139\uFE0F Quick Answers',
-		text: 'Ask for counts, totals, or averages to get a single number answer.',
-		examples: [
-			{ text: 'How many orders did I get yesterday?', desc: 'Single number answer' },
-			{ text: 'Total revenue this month', desc: 'Sum total answer' },
-			{ text: 'Average order value', desc: 'Computed average' },
-			{ text: 'How many products do I have?', desc: 'Product count' },
-		],
-	},
-	{
-		title: '\uD83D\uDCCA\u200D\uD83D\uDCBB Multi-metric',
-		text: 'Combine metrics for richer insights.',
-		examples: [
-			{ text: 'Compare this month vs last month revenue', desc: 'Side by side chart' },
-			{ text: 'Top 5 products by quantity sold', desc: 'Horizontal bar chart' },
-			{ text: 'Orders by payment gateway', desc: 'Distribution chart' },
-		],
-	},
-];
+export var LIBRARY_ITEMS = data.libraryItems || [];
+
+/**
+ * Map of error codes to user-friendly messages.
+ */
+export var ERROR_MESSAGES = {
+	FORBIDDEN: 'This action is not allowed. I can only answer questions about your store data \u2014 I cannot modify or delete anything.',
+	OUT_OF_SCOPE: 'I can only help with WooCommerce store questions. Try asking about sales, products, orders, or customers.',
+	NOT_WOOCOMMERCE: 'I only work with WooCommerce store data. That request involves non-store content I cannot access.',
+	SQL_VALIDATION: 'The generated query could not be validated for safety.',
+	QUERY_ERROR: 'The query ran into a database error. Please try rephrasing your question.',
+};
+
+/**
+ * Get a user-friendly error message for an error code.
+ *
+ * @param {string} errorCode
+ * @param {string} fallback
+ * @return {string}
+ */
+export function getErrorMessage(errorCode, fallback) {
+	if (errorCode && ERROR_MESSAGES[errorCode]) {
+		return ERROR_MESSAGES[errorCode];
+	}
+	return fallback || 'Something went wrong.';
+}

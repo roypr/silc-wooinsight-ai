@@ -240,9 +240,11 @@ class SILC_WIA_Admin {
 		);
 
 		require_once SILC_WIA_PATH . 'includes/class-api.php';
+		require_once SILC_WIA_PATH . 'includes/class-library.php';
 		$api_settings    = SILC_WIA_API::get_settings();
 		$api_configured  = ! empty( $api_settings['api_key'] );
 		$is_reason_model = SILC_WIA_API::is_reasoning_model( $api_settings['model'] ?? '' );
+		$library_items   = SILC_WIA_Library::get_library_for_js();
 
 		wp_localize_script( 'silc-wia-dashboard', 'silcWiaData', array(
 			'ajaxUrl'          => admin_url( 'admin-ajax.php' ),
@@ -252,6 +254,7 @@ class SILC_WIA_Admin {
 			'apiConfigured'    => $api_configured,
 			'isReasoningModel' => $is_reason_model,
 			'pluginVersion'    => SILC_WIA_VERSION,
+			'libraryItems'     => $library_items,
 			'settings'         => array(
 				'api_url'     => $api_settings['api_url'] ?? SILC_WIA_API::DEFAULT_API_URL,
 				'api_key'     => $api_settings['api_key'] ?? '',
@@ -269,7 +272,7 @@ class SILC_WIA_Admin {
 			),
 			'l10n' => array(
 				'askQuestion'        => __( 'Ask anything about your WooCommerce store...', 'silc-wooinsight-ai' ),
-				'getInsight'         => __( 'Get Insight', 'silc-wooinsight-ai' ),
+				'getInsight'         => __( 'Get AI Insight', 'silc-wooinsight-ai' ),
 				'generatingInsight'  => __( 'Generating insight...', 'silc-wooinsight-ai' ),
 				'enterQuestion'      => __( 'Enter your question in plain English', 'silc-wooinsight-ai' ),
 				'results'            => __( 'Results', 'silc-wooinsight-ai' ),
@@ -297,7 +300,7 @@ class SILC_WIA_Admin {
 				'settingsCache'      => __( 'Cache Duration', 'silc-wooinsight-ai' ),
 				'sqlDetails'         => __( 'SQL & Details', 'silc-wooinsight-ai' ),
 				'history'            => __( 'History', 'silc-wooinsight-ai' ),
-				'guides'             => __( 'Guides', 'silc-wooinsight-ai' ),
+				'library'            => __( 'Library', 'silc-wooinsight-ai' ),
 				'settings'           => __( 'Settings', 'silc-wooinsight-ai' ),
 				'refresh'            => __( 'Refresh', 'silc-wooinsight-ai' ),
 			),

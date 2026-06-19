@@ -307,12 +307,14 @@ class SILC_WIA_SQL_Validator {
 				'time_ms' => round( $time_ms, 2 ),
 			);
 		}
-
 		// Limit result size for display.
 		$max_rows = 200;
 		if ( count( $results ) > $max_rows ) {
 			$results = array_slice( $results, 0, $max_rows );
 		}
+
+		// Round all float values to 2 decimal places for consistency.
+		$results = self::round_data_values( $results );
 
 		return array(
 			'success' => true,
@@ -321,5 +323,27 @@ class SILC_WIA_SQL_Validator {
 			'time_ms' => round( $time_ms, 2 ),
 			'rows'    => count( $results ),
 		);
+	}
+
+	/**
+	 * Round all float/decimal values in a result set to 2 decimal places.
+	 *
+	 * Detects values that have a decimal component and rounds them,
+	 * while leaving integer values (IDs, counts) untouched.
+	 *
+	 * @param array $data The result rows to process.
+	 * @return array Processed rows with rounded floats.
+	 */
+	private static function round_data_values( array $data ): array {
+		foreach ( $data as &$row ) {
+			foreach ( $row as &$value ) {
+				if ( is_numeric( $value ) && false !== strpos( (string) $value, '.' ) ) {
+					$value = round( (float) $value, 2 );
+				}
+			}
+			unset( $value );
+		}
+		unset( $row );
+		return $data;
 	}
 }
