@@ -389,11 +389,12 @@ class SILC_WIA_Insight_Renderer {
 	}
 
 	/**
-	 * Prepare list data by injecting admin links and formatting values.
+	 * Prepare list data by injecting admin links, entity type detection,
+	 * readable column labels, and formatted values (timestamps, etc.).
 	 *
 	 * @param array $data     Raw result rows.
 	 * @param array $link_map Column => link_type mapping from AI config.
-	 * @return array List data with links.
+	 * @return array List data with enriched metadata.
 	 */
 	public static function prepare_list_data( array $data, array $link_map = array() ): array {
 		if ( empty( $data ) ) {
@@ -404,6 +405,14 @@ class SILC_WIA_Insight_Renderer {
 
 		foreach ( $data as $row ) {
 			$item = $row;
+
+			// Detect entity type for frontend template selection.
+			$item['_row_type'] = self::detect_row_entity_type( $row );
+
+			// Resolve product thumbnail URL (server-side, no extra query per item).
+			if ( 'product' === $item['_row_type'] && function_exists( 'wc_get_product' ) ) {
+				$item['_thumbnail'] = self::resolve_product_thumbnail( $row );
+			}
 
 			// Generate HPOS-aware admin links.
 			if ( ! empty( $link_map ) ) {
@@ -416,10 +425,137 @@ class SILC_WIA_Insight_Renderer {
 				}
 			}
 
+			// Build formatted labels and values for each display column.
+			$labels     = array();
+			$formatted  = array();
+			foreach ( $row as $col => $val ) {
+				if ( '_' === $col[0] ) {
+					continue;
+				}
+				$labels[ $col ]    = self::format_column_label( $col );
+				$formatted[ $col ] = self::format_value( $val, $col );
+			}
+			$item['_labels']    = $labels;
+			$item['_formatted'] = $formatted;
+
 			$processed[] = $item;
 		}
 
 		return $processed;
+	}
+
+	/**
+	 * Format a column name for display by replacing underscores with spaces
+	 * and capitalising words.
+	 *
+	 * @param string $name Raw column name (e.g. "customer_name").
+	 * @return string Readable label (e.g. "Customer Name").
+	 */
+	public static function format_column_label( string $name ): string {
+		return ucfirst( str_replace( '_', ' ', $name ) );
+	}
+
+	/**
+	 * Format a single value for display.
+	 *
+	 * - Detects timestamp/date columns and formats using WP date_i18n settings.
+	 * - Passes through all other values as-is (string cast).
+	 *
+	 * @param mixed  $value  The raw value.
+	 * @param string $column The column name (used for heuristic detection).
+	 * @return string Formatted value.
+	 */
+	public static function format_value( $value, string $column = '' ): string {
+		if ( '' === $value || null === $value ) {
+			return '';
+		}
+
+		$timestamp = null;
+
+		// Heuristic: column name suggests a date/time field.
+		$date_keywords = array( 'date', 'time', 'created', 'updated', 'modified', 'paid_date', 'completed', 'registered', 'timestamp' );
+		$is_date_col   = false;
+		foreach ( $date_keywords as $kw ) {
+			if ( stripos( $column, $kw ) !== false ) {
+				$is_date_col = true;
+				break;
+			}
+		}
+
+		if ( $is_date_col && is_string( $value ) ) {
+			// MySQL datetime or date string.
+			if ( preg_match( '/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/', $value ) ) {
+				$timestamp = strtotime( $value );
+			}
+		}
+
+		if ( null !== $timestamp && false !== $timestamp ) {
+			return date_i18n(
+				get_option( 'date_format' ) . ' ' . get_option( 'time_format' ),
+				$timestamp
+			);
+		}
+
+		return (string) $value;
+	}
+
+	/**
+	 * Detect what entity type a row represents based on its columns.
+	 *
+	 * Priority order: order → product → customer → coupon → generic.
+	 *
+	 * @param array $row A single data row.
+	 * @return string One of 'order', 'product', 'customer', 'coupon', 'generic'.
+	 */
+	public static function detect_row_entity_type( array $row ): string {
+		$checks = array(
+			'order'    => array( 'order_id', 'parent_order_id' ),
+			'product'  => array( 'product_id', 'variation_id' ),
+			'customer' => array( 'customer_id', 'user_id' ),
+			'coupon'   => array( 'coupon_id' ),
+		);
+
+		foreach ( $checks as $type => $columns ) {
+			foreach ( $columns as $col ) {
+				if ( isset( $row[ $col ] ) && ! empty( $row[ $col ] ) ) {
+					return $type;
+				}
+			}
+		}
+
+		return 'generic';
+	}
+
+	/**
+	 * Resolve product thumbnail URL from a data row.
+	 *
+	 * Handles both simple products (product_id) and variations (variation_id).
+	 * Falls back to the WooCommerce placeholder image if no featured image is set.
+	 *
+	 * @param array $row A single data row with product_id and/or variation_id.
+	 * @return string Absolute URL to the thumbnail image, or empty string.
+	 */
+	private static function resolve_product_thumbnail( array $row ): string {
+		$product_id = ! empty( $row['variation_id'] ) ? intval( $row['variation_id'] ) : intval( $row['product_id'] ?? 0 );
+		if ( $product_id <= 0 ) {
+			return '';
+		}
+
+		$product = wc_get_product( $product_id );
+		if ( ! $product ) {
+			return '';
+		}
+
+		$image_id = $product->get_image_id();
+		if ( $image_id ) {
+			$url = wp_get_attachment_image_url( $image_id, 'thumbnail' );
+			if ( $url ) {
+				return $url;
+			}
+		}
+
+		// Fallback: WooCommerce placeholder image.
+		return wc_placeholder_img_src( 'thumbnail' );
 	}
 
 	/**
@@ -536,13 +672,14 @@ class SILC_WIA_Insight_Renderer {
 	}
 
 	/**
-	 * Auto-detect link columns from a data row.
+	 * Auto-detect row type links from a data row.
+	 *
+	 * Scans common WooCommerce ID columns and returns a column => link type map.
 	 *
 	 * @param array $row A single data row.
-	 * @return array Link map.
+	 * @return array Column => link_type mapping.
 	 */
-	private static function auto_detect_links( array $row ): array {
-		$links    = array();
+	private static function auto_detect_row_type( array $row ): array {
 		$patterns = array(
 			'order_id'          => 'order',
 			'parent_order_id'   => 'order',
@@ -554,13 +691,24 @@ class SILC_WIA_Insight_Renderer {
 			'order_item_id'     => 'order_item',
 		);
 
+		$types = array();
 		foreach ( $patterns as $col => $type ) {
 			if ( isset( $row[ $col ] ) && ! empty( $row[ $col ] ) ) {
-				$links[ $col ] = $type;
+				$types[ $col ] = $type;
 			}
 		}
 
-		return self::get_admin_links( $row, $links );
+		return $types;
+	}
+
+	/**
+	 * Auto-detect link columns from a data row.
+	 *
+	 * @param array $row A single data row.
+	 * @return array Link map.
+	 */
+	private static function auto_detect_links( array $row ): array {
+		return self::get_admin_links( $row, self::auto_detect_row_type( $row ) );
 	}
 
 	/**
