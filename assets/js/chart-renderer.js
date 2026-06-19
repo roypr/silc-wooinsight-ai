@@ -21,6 +21,7 @@ var SILC_WIA_Charts = ( function () {
 	/**
 	 * Vibrant, well-distributed color palette (12 colors).
 	 * Each has a solid and a semi-transparent variant for fill vs stroke.
+	 * Order is randomized on each page load for variety.
 	 */
 	var palette = [
 		{ solid: '#2271b1', fill: 'rgba(34,113,177,0.65)' },  // WP blue
@@ -37,6 +38,18 @@ var SILC_WIA_Charts = ( function () {
 		{ solid: '#cc6b2c', fill: 'rgba(204,107,44,0.65)' },  // burnt orange
 	];
 
+	/**
+	 * Fisher-Yates shuffle to randomize palette order on load.
+	 */
+	function shuffleArray( arr ) {
+		for ( var i = arr.length - 1; i > 0; i-- ) {
+			var j = Math.floor( Math.random() * ( i + 1 ) );
+			var tmp = arr[ i ];
+			arr[ i ] = arr[ j ];
+			arr[ j ] = tmp;
+		}
+		return arr;
+	}
 	/**
 	 * Get palette color by index.
 	 */
@@ -87,6 +100,9 @@ var SILC_WIA_Charts = ( function () {
 		var isHorizontalBar = chartType === 'horizontalBar';
 		var isBar = chartType === 'bar' || isHorizontalBar;
 
+		// Randomize color order on every render (no page reload needed).
+		shuffleArray( palette );
+
 		// Build datasets with rich defaults.
 		var datasets = ( config.datasets || [] ).map( function ( ds, index ) {
 			var c = getColor( index );
@@ -109,14 +125,13 @@ var SILC_WIA_Charts = ( function () {
 				data: ds.data || [],
 				backgroundColor: bg,
 				borderColor: border,
-				borderWidth: isPieOrDoughnut ? 2 : 1.5,
-				hoverBorderWidth: 2.5,
+				borderWidth: 0,
+				hoverBorderWidth: 0,
 			};
 
 			// Bar-specific enhancements.
 			if ( isBar ) {
-				dataset.borderRadius = 4;
-				dataset.borderSkipped = 'bottom';
+				dataset.borderRadius = 0;
 				dataset.hoverBackgroundColor = border;
 			}
 
@@ -138,7 +153,7 @@ var SILC_WIA_Charts = ( function () {
 			// Pie/doughnut: add hover offset for interactivity.
 			if ( isPieOrDoughnut ) {
 				dataset.hoverOffset = 8;
-				dataset.spacing = 2;
+				dataset.spacing = 0;
 			}
 
 			return dataset;
