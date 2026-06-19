@@ -101,12 +101,11 @@ class SILC_WIA_Ajax {
 
 		require_once SILC_WIA_PATH . 'includes/class-insights.php';
 
-		$insight = SILC_WIA_Insights::generate_insight( $question );
-
 		if ( ! $insight['success'] ) {
 			wp_send_json_error( array(
-				'message'  => $insight['error'] ?? __( 'Failed to generate insight.', 'silc-wooinsight-ai' ),
-				'question' => $question,
+				'message'    => $insight['error'] ?? __( 'Failed to generate insight.', 'silc-wooinsight-ai' ),
+				'error_code' => $insight['error_code'] ?? '',
+				'question'   => $question,
 			) );
 			return;
 		}
@@ -193,8 +192,9 @@ class SILC_WIA_Ajax {
 
 		if ( ! $insight['success'] ) {
 			wp_send_json_error( array(
-				'message'  => $insight['error'] ?? __( 'Failed to regenerate insight.', 'silc-wooinsight-ai' ),
-				'question' => $question,
+				'message'    => $insight['error'] ?? __( 'Failed to regenerate insight.', 'silc-wooinsight-ai' ),
+				'error_code' => $insight['error_code'] ?? '',
+				'question'   => $question,
 			) );
 			return;
 		}

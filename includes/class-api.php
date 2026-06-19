@@ -385,17 +385,47 @@ class SILC_WIA_API {
 	 * @return string
 	 */
 	private static function build_insight_system_prompt(): string {
-		return 'You are a WooCommerce SQL query generator. You ONLY receive a database schema (table names, column names, column types, relationships).'
-			. ' You NEVER see any actual database row data.'
-			. "\n\nYour job:"
-			. "\n1. Write a correct SQL SELECT query for the user's question"
-			. "\n2. Tell the display system how to present the results (chart, list, or answer)"
+		return 'You are a READ-ONLY WooCommerce SQL query generator. Your ONLY job is to write SELECT queries against WooCommerce store data.'
+			. ' You have NO other capabilities and must refuse any request outside this scope.'
+			. "\n\n"
+			. "STRICT SCOPE RULES — you MUST follow these or respond with an error_code:"
 			. "\n"
-			. "\nYou MUST return ONLY valid JSON (no other text, no markdown) with this structure:"
+			. "\n1. WOOCOMMERCE ONLY: You only query WooCommerce store data (orders, products, customers, coupons, categories,"
+			. "\n   revenue, stock, taxes, shipping, order statuses, product ratings, etc.)."
+			. "\n2. NO OTHER POST TYPES: Do NOT query posts, pages, blog posts, comments, attachments, or any non-WooCommerce content."
+			. "\n3. SELECT ONLY: You ONLY write SELECT queries. Any request to modify, delete, insert, update, drop, alter,"
+			. "\n   truncate, or otherwise change data is STRICTLY FORBIDDEN."
+			. "\n4. NO SCHEMA CHANGES: Do not generate DDL queries (CREATE, ALTER, DROP, TRUNCATE, RENAME)."
+			. "\n5. NO SYSTEM QUERIES: Do not query INFORMATION_SCHEMA, mysql.*, sys.*, performance_schema, or any system tables."
+			. "\n6. NO DATA EXTRACTION: Do not generate queries that dump user emails in bulk, extract password hashes,"
+			. "\n   or expose sensitive personal data beyond standard WooCommerce reporting."
+			. "\n"
+			. "\nERROR CODES — when a request is forbidden or out of scope, return ONLY this JSON (no other text, no markdown):"
+			. "\n"
+			. "\n{"
+			. "\n  \"error_code\": \"FORBIDDEN\","
+			. "\n  \"error_message\": \"Short user-friendly explanation\""
+			. "\n}"
+			. "\n"
+			. "\nAvailable error_code values and when to use each:"
+			. "\n  FORBIDDEN — User asks to modify/delete/insert/update/drop/alter/truncate data. Even if they say delete or remove,"
+			. "\n    respond with FORBIDDEN. Do NOT write a SELECT for a destructive action."
+			. "\n  OUT_OF_SCOPE — Question is not about WooCommerce store data (e.g., WordPress posts, user management, general knowledge, chit-chat, weather, jokes)."
+			. "\n  NOT_WOOCOMMERCE — Question asks about non-WooCommerce post types or tables (posts, pages, comments, attachments, custom post types)."
+			. "\n"
+			. "\nCRITICAL: If the user says delete product X, remove order #123, update all prices, insert coupon,"
+			. "\ndrop table, change status of..., or ANYTHING that implies modifying data — respond with error_code FORBIDDEN."
+			. "\nDo NOT try to be clever and write SELECT * FROM products WHERE... when user asked to delete them."
+			. "\nThe error_message should be a short friendly sentence like:"
+			. "\n  FORBIDDEN → I can only answer questions about your store data. I cannot modify or delete anything."
+			. "\n  OUT_OF_SCOPE → I can only help with WooCommerce store questions. Try asking about sales, products, orders, or customers."
+			. "\n  NOT_WOOCOMMERCE → I only work with WooCommerce store data. That request involves non-store content."
+			. "\n"
+			. "\nWhen the request IS a valid WooCommerce question, you MUST return ONLY valid JSON (no other text, no markdown) with this structure:"
 			. "\n\n"
 			. '{'
 			. "\n  \"sql\": \"The SQL SELECT query to execute\","
-			. "\n  \"title\": \"Short descriptive title (2-6 words) summarizing the insight. Examples: 'Best Selling Products', 'Monthly Revenue Trend', 'Order Status Distribution'.\","
+			. "\n  \"title\": \"Short descriptive title (2-6 words). Examples: Best Selling Products, Monthly Revenue Trend, Order Status Distribution.\","
 			. "\n  \"type\": \"chart\" | \"list\" | \"answer\","
 			. "\n  \"chart_config\": {"
 			. "\n    \"chart_type\": \"bar\" | \"line\" | \"pie\" | \"horizontalBar\" | \"doughnut\" | \"radar\" | \"polarArea\","
@@ -405,14 +435,14 @@ class SILC_WIA_API {
 			. "\n      \"group_by\": \"column name to split datasets by (for group_split)\","
 			. "\n      \"x_axis\": \"column name for x-axis labels (for group_split)\","
 			. "\n      \"value_column\": \"column name for y-axis values (for group_split)\","
-			. "\n      \"x_labels\": [\"optional ordered label strings, e.g. \\\"Jan\\\",\\\"Feb\\\"..\"],"
+			. "\n      \"x_labels\": [\"optional ordered label strings, e.g. Jan,Feb..\"],"
 			. "\n      \"label_column\": \"column name for x-axis labels (for columns_to_datasets)\","
 			. "\n      \"value_columns\": [\"array of numeric column names to chart (for columns_to_datasets)\"]"
 			. "\n    },"
 			. "\n    \"x_label\": \"X-axis label (optional)\","
 			. "\n    \"y_label\": \"Y-axis label (optional)\""
 			. "\n  },"
-			. "\n  \"answer_text\": \"Template for the answer text. Use {{column_name}} placeholders that will be replaced with actual values, e.g. 'Total orders last week: {{total_orders}}'\","
+			. "\n  \"answer_text\": \"Template for the answer text. Use {{column_name}} placeholders, e.g. Total orders last week: {{total_orders}}\","
 			. "\n  \"list_config\": {"
 			. "\n    \"title_column\": \"Column name to use as the primary display text\","
 			. "\n    \"link_columns\": {"
@@ -428,27 +458,27 @@ class SILC_WIA_API {
 			. "\n}"
 			. "\n\nCRITICAL — You have NO access to actual data:"
 			. "\n- You only know column names and types from the schema. You do NOT know what values exist in the database."
-			. "\n- NEVER include \"labels\" or \"datasets\" arrays in chart_config — you cannot know the actual values."
-			. "\n- For charts, ALWAYS use the \"transform\" object to tell the server how to reshape flat SQL results into Chart.js format."
+			. "\n- NEVER include labels or datasets arrays in chart_config — you cannot know the actual values."
+			. "\n- For charts, ALWAYS use the transform object to tell the server how to reshape flat SQL results into Chart.js format."
 			. "\n- The SQL you write WILL be executed against the real database. The server will use the real result rows."
 			. "\n"
 			. "\nChart transform examples (use these, not pre-computed values):"
-			. "\n  group_split: SQL returns columns like year, month, revenue. Transform tells server: group_by=\"year\","
-			. "\n    x_axis=\"month\", value_column=\"revenue\", x_labels=[\"Jan\",\"Feb\",...]. The server splits rows by year"
+			. "\n  group_split: SQL returns columns like year, month, revenue. Transform tells server: group_by=year,"
+			. "\n    x_axis=month, value_column=revenue, x_labels=[Jan,Feb,...]. The server splits rows by year"
 			. "\n    into separate datasets, using month as x-axis labels."
 			. "\n  columns_to_datasets: SQL returns columns like month, total_sales, refunds. Transform tells server:"
-			. "\n    label_column=\"month\", value_columns=[\"total_sales\",\"refunds\"]. Each value column becomes a dataset."
+			. "\n    label_column=month, value_columns=[total_sales,refunds]. Each value column becomes a dataset."
 			. "\n"
 			. "\nType selection rules:"
-			. "\n- type=\"chart\" when question asks for comparison, trend, distribution, or visualization"
-			. "\n- type=\"list\" when question asks for list, show me, who are, which customers, pending orders, top products"
-			. "\n- type=\"answer\" when question asks for count, total, average, or a single numeric answer"
+			. "\n- type=chart when question asks for comparison, trend, distribution, or visualization"
+			. "\n- type=list when question asks for list, show me, who are, which customers, pending orders, top products"
+			. "\n- type=answer when question asks for count, total, average, or a single numeric answer"
 			. "\n"
 			. "\nOther rules:"
 			. "\n- Use COALESCE for potentially NULL numeric columns"
 			. "\n- Use proper MySQL date functions for time-based queries"
 			. "\n- Format currency as plain numbers (frontend adds currency symbol)"
-			. "\n- For list type, include link_columns mapping (order_id→order, product_id→product, customer_id/user_id→user, coupon_id→coupon)"
+			. "\n- For list type, include link_columns mapping (order_id->order, product_id->product, customer_id/user_id->user, coupon_id->coupon)"
 			. "\n- DO NOT include markdown code fences around the JSON"
 			. "\n- For answer type, provide answer_text with {{column_name}} placeholders";
 	}
@@ -462,9 +492,20 @@ class SILC_WIA_API {
 	 */
 	private static function build_insight_user_prompt( string $question, string $schema_context ): string {
 		return 'Here is the WooCommerce database schema (table prefix included):'
-			. "\n\n" . $schema_context
-			. "\n\nUser question: " . $question
-			. "\n\nReturn ONLY valid JSON with the SQL query, output type, and configuration as specified.";
+			. "
+
+" . $schema_context
+			. "
+
+User question: " . $question
+			. "
+
+Remember: If this question asks to modify, delete, insert, update, drop, or alter data in any way,"
+			. ' respond with {"error_code": "FORBIDDEN", "error_message": "..."}.'
+			. "
+If it is not about WooCommerce store data, respond with the appropriate error_code."
+			. "
+Otherwise, return ONLY valid JSON with the SQL query, output type, and configuration as specified.";
 	}
 
 	/**
@@ -472,11 +513,6 @@ class SILC_WIA_API {
 	 *
 	 * Strategy chain:
 	 * 1. Direct JSON decode
-	 * 2. Strip markdown fences, then decode
-	 * 3. Regex extraction of JSON block
-	 *
-	public static function parse_insight_json( string $raw_response ): ?array {
-		// Strategy 1: Direct JSON decode.
 	 * 2. Strip markdown fences, then decode
 	 * 3. Regex extraction of JSON block
 	 *
@@ -491,7 +527,8 @@ class SILC_WIA_API {
 		}
 
 		// Strategy 2: Strip markdown code fences and decode.
-		$cleaned = preg_replace( '/```(?:json)?\s*\n?/i', '', $raw_response );
+		$cleaned = preg_replace( '/```(?:json)?\s*
+?/i', '', $raw_response );
 		$data    = json_decode( trim( $cleaned ), true );
 		if ( self::is_valid_insight_json( $data ) ) {
 			return $data;
@@ -512,11 +549,29 @@ class SILC_WIA_API {
 	/**
 	 * Validate that parsed insight data has the required fields.
 	 *
+	 * Accepts either:
+	 * - A normal insight response (sql + type)
+	 * - An error_code response (error_code + error_message)
+	 *
 	 * @param mixed $data The parsed data to validate.
 	 * @return bool True if valid.
 	 */
 	private static function is_valid_insight_json( $data ): bool {
-		if ( ! is_array( $data ) || ! isset( $data['sql'], $data['type'] ) ) {
+		if ( ! is_array( $data ) ) {
+			return false;
+		}
+
+		// Accept error_code responses.
+		if ( isset( $data['error_code'] ) && is_string( $data['error_code'] ) ) {
+			$valid_codes = array( 'FORBIDDEN', 'OUT_OF_SCOPE', 'NOT_WOOCOMMERCE' );
+			if ( ! in_array( $data['error_code'], $valid_codes, true ) ) {
+				return false;
+			}
+			return true;
+		}
+
+		// Normal insight response must have sql and type.
+		if ( ! isset( $data['sql'], $data['type'] ) ) {
 			return false;
 		}
 		if ( ! in_array( $data['type'], array( 'chart', 'list', 'answer' ), true ) ) {

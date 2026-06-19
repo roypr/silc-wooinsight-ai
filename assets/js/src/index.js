@@ -14,19 +14,21 @@ import {
 	defaults,
 	SUGGESTED_PROMPTS,
 	apiConfigured,
+	getErrorMessage,
 } from './utils.js';
 
 import {
 	getPanelTitle,
 	renderSqlPanel,
 	renderHistoryPanel,
-	renderGuidesPanel,
+	renderLibraryPanel,
 	renderSuggestedPanel,
 } from './panels.js';
 
 import { renderResult } from './results.js';
 import { renderSidebar } from './sidebar.js';
 import { renderSettingsPanel } from './settings-panel.js';
+import { WalkthroughOverlay, useWalkthrough } from './walkthrough.js';
 
 var el = wp.element.createElement;
 var useState = wp.element.useState;
@@ -108,11 +110,14 @@ function WooInsightDashboard() {
 	var _testResult = useState(null);
 	var testResult = _testResult[0];
 	var setTestResult = _testResult[1];
+	var _librarySearchQuery = useState('');
+	var librarySearchQuery = _librarySearchQuery[0];
+	var setLibrarySearchQuery = _librarySearchQuery[1];
 
-	// Guides search state.
-	var _guideSearchQuery = useState('');
-	var guideSearchQuery = _guideSearchQuery[0];
-	var setGuideSearchQuery = _guideSearchQuery[1];
+	// Walkthrough.
+	var walkthrough = useWalkthrough();
+
+	// --- Effects ---
 
 	// --- Effects ---
 
@@ -183,7 +188,9 @@ function WooInsightDashboard() {
 						}
 					}).catch(function () {});
 				} else {
-					setError(resp.data && resp.data.message ? resp.data.message : (l10n.errorOccurred || 'Failed to generate insight'));
+					var errorCode = (resp.data && resp.data.error_code) || '';
+					var errorMsg = getErrorMessage(errorCode, resp.data && resp.data.message ? resp.data.message : (l10n.errorOccurred || 'Failed to generate insight'));
+					setError(errorMsg);
 				}
 			})
 			.catch(function () {
@@ -262,6 +269,43 @@ function WooInsightDashboard() {
 				setError('Network error. Please try again.');
 			});
 	}, []);
+
+	var handleLibraryItem = useCallback(function (item) {
+		if (!item || !item.sql) return;
+
+		// Destroy existing chart.
+		if (typeof SILC_WIA_Charts !== 'undefined') {
+			SILC_WIA_Charts.destroyChart('insight-chart-canvas');
+		}
+
+		setQuestion(item.question || '');
+		setActivePanel(null);
+		setHasRun(true);
+		setError(null);
+		setLoading(true);
+
+		doAction('execute_sql', {
+			sql: item.sql,
+			type: item.type || 'answer',
+			chart_config: item.chart_config ? JSON.stringify(item.chart_config) : '',
+			list_config: item.list_config ? JSON.stringify(item.list_config) : '',
+			answer_text: item.answer_text || '',
+			title: item.title || '',
+		})
+			.then(function (resp) {
+				setLoading(false);
+				if (resp.success && resp.data) {
+					setInsightData(resp.data);
+				} else {
+					setError(resp.data && resp.data.message ? resp.data.message : (l10n.errorOccurred || 'Failed to execute'));
+				}
+			})
+			.catch(function () {
+				setLoading(false);
+				setError('Network error. Please try again.');
+			});
+	}, []);
+
 	var toggleSidebar = useCallback(function () {
 		setSidebarExpanded(function (prev) { return !prev; });
 	}, []);
@@ -360,13 +404,11 @@ function WooInsightDashboard() {
 				handleLoadHistory: handleLoadHistory,
 				handleClearHistory: handleClearHistory,
 			});
-		} else if (activePanel === 'guides') {
-			panelContent = renderGuidesPanel({
-				setQuestion: setQuestion,
-				setActivePanel: setActivePanel,
-				handleAsk: handleAsk,
-				guideSearchQuery: guideSearchQuery,
-				setGuideSearchQuery: setGuideSearchQuery,
+		} else if (activePanel === 'library') {
+			panelContent = renderLibraryPanel({
+				handleLibraryItem: handleLibraryItem,
+				librarySearchQuery: librarySearchQuery,
+				setLibrarySearchQuery: setLibrarySearchQuery,
 			});
 		} else if (activePanel === 'suggested') {
 			panelContent = renderSuggestedPanel({
@@ -417,6 +459,9 @@ function WooInsightDashboard() {
 							style: { color: '#b32d2e', fontSize: '13px', background: '#fcf0f1', padding: '8px 16px', borderRadius: '8px', marginBottom: '20px', maxWidth: '400px' },
 						}, l10n.apiNotConfigured + '. Open the \u2699\uFE0F Settings panel to add your API key.')
 						: null,
+					el('p', {
+						style: { fontSize: '11px', color: '#a7aaad', marginBottom: '20px', maxWidth: '400px' },
+					}, '\u2139\uFE0F AI can make mistakes. Always verify important insights before making business decisions.'),
 					el('div', { className: 'silc-wia-prompts' },
 						SUGGESTED_PROMPTS.map(function (p, i) {
 							return el('div', {
@@ -428,7 +473,7 @@ function WooInsightDashboard() {
 								p.text
 							);
 						})
-					),
+					)
 				),
 				el('div', { className: 'silc-wia-chat-input-row' },
 					el(TextControl, {
@@ -544,7 +589,13 @@ function WooInsightDashboard() {
 			el('div', { className: 'silc-wia-chat' },
 				renderMain()
 			)
-		)
+		),
+
+		// Walkthrough overlay (renders on top of everything when active).
+		el(WalkthroughOverlay, {
+			active: walkthrough.active,
+			onDismiss: walkthrough.dismiss,
+		})
 	);
 }
 
