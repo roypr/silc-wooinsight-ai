@@ -272,7 +272,7 @@ class SILC_WIA_Admin {
 			),
 			'l10n' => array(
 				'askQuestion'        => __( 'Ask anything about your WooCommerce store...', 'silc-wooinsight-ai' ),
-				'getInsight'         => __( 'Get Insight', 'silc-wooinsight-ai' ),
+				'getInsight'         => __( 'Get AI Insight', 'silc-wooinsight-ai' ),
 				'generatingInsight'  => __( 'Generating insight...', 'silc-wooinsight-ai' ),
 				'enterQuestion'      => __( 'Enter your question in plain English', 'silc-wooinsight-ai' ),
 				'results'            => __( 'Results', 'silc-wooinsight-ai' ),

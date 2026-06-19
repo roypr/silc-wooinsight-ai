@@ -8,5 +8,5 @@
 		'wp-html-entities',
 		'silc-wia-chart-renderer',
 	),
-	'version' => '2.3.0',
+	'version' => SILC_WIA_VERSION,
 );

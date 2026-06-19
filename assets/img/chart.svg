@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 124 124" width="124" height="124">
+  <!-- Bars -->
+  <rect x="10" y="72" width="18" height="42" rx="3" fill="#FF3B30"/>
+  <rect x="39" y="46" width="18" height="68" rx="3" fill="#FF9500"/>
+  <rect x="97" y="24" width="18" height="90" rx="3" fill="#34C759"/>
+  <rect x="68" y="59" width="18" height="55" rx="3" fill="#AF52DE"/>
+  <!-- Line -->
+  <polyline points="10,60 48,32 77,47 106,4" fill="none" stroke="#007AFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Line dots -->
+  <circle cx="10" cy="60" r="4" fill="#007AFF"/>
+  <circle cx="48" cy="32" r="4" fill="#007AFF"/>
+  <circle cx="77" cy="47" r="4" fill="#007AFF"/>
+  <circle cx="106" cy="4" r="4" fill="#007AFF"/>
+</svg>

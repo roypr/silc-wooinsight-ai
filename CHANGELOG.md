@@ -4,7 +4,7 @@ All notable changes to SILC WooInsight AI will be documented in this file.
 
 ---
 
-## [2.3.0] — Unreleased
+## [2.3.0] — 2026
 
 ### Added
 - **Insight Library** — 30 built-in, ready-to-execute queries that work without an AI API key
@@ -30,7 +30,7 @@ All notable changes to SILC WooInsight AI will be documented in this file.
 
 ---
 
-## [2.0.0] — 2025
+## [2.0.0] — 2026
 
 ### Added
 - Complete React dashboard built on `@wordpress/element` and `@wordpress/components`
@@ -66,7 +66,7 @@ All notable changes to SILC WooInsight AI will be documented in this file.
 
 ---
 
-## [1.0.0] — 2024
+## [1.0.0] — 2026
 
 ### Added
 - Initial private release

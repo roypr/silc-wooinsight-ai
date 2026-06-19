@@ -58,6 +58,7 @@ export var l10n = data.l10n || {};
 export var settings = data.settings || {};
 export var defaults = data.defaults || {};
 export var apiConfigured = data.apiConfigured || false;
+export var pluginUrl = data.pluginUrl || '';
 export var pluginVersion = data.pluginVersion || '2.0.0';
 
 /**

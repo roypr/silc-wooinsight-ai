@@ -578,6 +578,12 @@
 /*  CHAT AREA — main content                                               */
 /* ----------------------------------------------------------------------- */
 
+.silc-wia-spacer{
+	display: block;
+	content: " ";
+	width: 100%;
+	padding: 12px 0;
+}
 .silc-wia-chat {
 	flex: 1;
 	display: flex;
@@ -635,7 +641,6 @@
 	flex-wrap: wrap;
 	gap: 8px;
 	justify-content: center;
-	max-width: 600px;
 }
 
 .silc-wia-prompt-chip {

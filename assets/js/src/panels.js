@@ -213,7 +213,7 @@ export function renderLibraryPanel(props) {
 		el('div', { className: 'silc-wia-library-search', style: { marginBottom: '12px' } },
 			el('input', {
 				type: 'text',
-				placeholder: 'Search library (regex supported)...',
+				placeholder: 'Search library...',
 				value: searchQuery,
 				onChange: function (e) { setSearchQuery(e.target.value); },
 				style: { width: '100%', boxSizing: 'border-box' },

@@ -12,6 +12,7 @@ import {
 	l10n,
 	settings,
 	defaults,
+	pluginUrl,
 	SUGGESTED_PROMPTS,
 	apiConfigured,
 	getErrorMessage,
@@ -449,19 +450,21 @@ function WooInsightDashboard() {
 			// Empty state: centered welcome.
 			return el('div', { className: 'silc-wia-chat-empty' },
 				el('div', { className: 'silc-wia-chat-results' },
-					el('div', { className: 'silc-wia-chat-empty-icon' }, '\uD83D\uDCCA'),
+					el('img', {
+						className: 'silc-wia-chat-empty-icon',
+						src: pluginUrl + 'assets/img/chart.svg',
+						alt: 'Chart icon',
+					}),
 					el('h2', null, 'Ask anything about your WooCommerce store'),
 					el('p', null,
 						'Get instant charts, lists, and answers about your sales, products, customers, and more. Just type a question or try one below.'
 					),
+					el('div', {className: 'silc-wia-spacer'}),
 					!apiConfigured
 						? el('p', {
 							style: { color: '#b32d2e', fontSize: '13px', background: '#fcf0f1', padding: '8px 16px', borderRadius: '8px', marginBottom: '20px', maxWidth: '400px' },
 						}, l10n.apiNotConfigured + '. Open the \u2699\uFE0F Settings panel to add your API key.')
 						: null,
-					el('p', {
-						style: { fontSize: '11px', color: '#a7aaad', marginBottom: '20px', maxWidth: '400px' },
-					}, '\u2139\uFE0F AI can make mistakes. Always verify important insights before making business decisions.'),
 					el('div', { className: 'silc-wia-prompts' },
 						SUGGESTED_PROMPTS.map(function (p, i) {
 							return el('div', {
@@ -496,10 +499,13 @@ function WooInsightDashboard() {
 						? el(Spinner, {})
 						: el('span', { className: 'silc-wia-btn-content' },
 							el('span', { className: 'dashicons dashicons-visibility' }),
-							el('span', { className: 'silc-wia-btn-label' }, l10n.getInsight || 'Get Insight')
+							el('span', { className: 'silc-wia-btn-label' }, l10n.getInsight || 'Get AI Insight')
 						)
 					)
-				)
+				),
+				el('p', {
+					style: { fontSize: '11px', color: '#a7aaad', marginBottom: '20px', maxWidth: 'unset', marginTop: '12px', marginBottom: '0' },
+				}, '\u26A0\uFE0F AI can make mistakes. Always verify important insights before making business decisions.')
 			);
 		}
 
@@ -552,11 +558,14 @@ function WooInsightDashboard() {
 						? el(Spinner, {})
 						: el('span', { className: 'silc-wia-btn-content' },
 							el('span', { className: 'dashicons dashicons-visibility' }),
-							el('span', { className: 'silc-wia-btn-label' }, l10n.getInsight || 'Get Insight')
+							el('span', { className: 'silc-wia-btn-label' }, l10n.getInsight || 'Get AI Insight')
 						)
 					)
 				)
-			)
+			),
+			el('p', {
+				style: { fontSize: '11px', color: '#a7aaad', marginBottom: '20px', maxWidth: 'unset', marginTop: '12px', marginBottom: '0' },
+			}, '\u26A0\uFE0F AI can make mistakes. Always verify important insights before making business decisions.'),
 		);
 	}
 
