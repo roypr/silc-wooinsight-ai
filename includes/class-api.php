@@ -324,6 +324,8 @@ class SILC_WIA_API {
 		error_log('[SILC_WIA] Insight Request - User Prompt:' . $user_prompt);
 
 		$result = self::send_request( $body );
+		error_log('[SILC_WIA] Insight Response: ' . print_r($result['data'], true));
+
 		if ( ! $result['success'] ) {
 			return array(
 				'success' => false,
@@ -333,7 +335,6 @@ class SILC_WIA_API {
 		}
 
 		$content = self::extract_content( $result['data'] );
-		error_log( '[SILC_WIA] Insight Response: ' . $content );
 
 		if ( empty( $content ) ) {
 			return array(

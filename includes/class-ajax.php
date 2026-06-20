@@ -101,6 +101,8 @@ class SILC_WIA_Ajax {
 
 		require_once SILC_WIA_PATH . 'includes/class-insights.php';
 
+		$insight = SILC_WIA_Insights::generate_insight($question);
+		
 		if ( ! $insight['success'] ) {
 			wp_send_json_error( array(
 				'message'    => $insight['error'] ?? __( 'Failed to generate insight.', 'silc-wooinsight-ai' ),
