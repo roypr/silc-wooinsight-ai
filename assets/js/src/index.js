@@ -8,7 +8,6 @@
 
 import {
 	doAction,
-	LogoSvg,
 	l10n,
 	settings,
 	defaults,
@@ -591,7 +590,11 @@ function WooInsightDashboard() {
 		// Top bar.
 		el('div', { className: 'silc-wia-topbar' },
 			el('div', { className: 'silc-wia-topbar-logo' },
-				el(LogoSvg),
+				el('img', {
+					className: 'silc-wia-logo-icon',
+					src: pluginUrl + 'assets/img/chart.svg',
+					alt: 'WooInsight AI',
+				}),
 				'WooInsight AI'
 			),
 			el('span', { className: 'silc-wia-topbar-model' }, settings.model || defaults.model),
