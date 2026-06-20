@@ -12,6 +12,27 @@ var el = wp.element.createElement;
 var Button = wp.components.Button;
 
 /**
+ * Helper: a labelled input row.
+ *
+ * Defined outside renderSettingsPanel so React recognises it as the
+ * same component type across renders, preventing unnecessary
+ * unmount/remount of input elements (which caused focus loss).
+ *
+ * @param {Object} sfProps
+ * @param {string} sfProps.label
+ * @param {Object} sfProps.children
+ * @param {string} sfProps.help
+ * @return {Object} Element.
+ */
+function SettingsField(sfProps) {
+	return el('div', { className: 'silc-wia-settings-field' },
+		el('label', null, sfProps.label),
+		sfProps.children,
+		sfProps.help ? el('div', { className: 'help' }, sfProps.help) : null
+	);
+}
+
+/**
  * Render the Settings panel.
  *
  * @param {Object}   props
@@ -38,15 +59,6 @@ export function renderSettingsPanel(props) {
 	var testResult = props.testResult;
 
 	var hasKey = settings.api_key && settings.api_key.length > 0;
-
-	// Helper: a labelled input row.
-	function SettingsField(sfProps) {
-		return el('div', { className: 'silc-wia-settings-field' },
-			el('label', null, sfProps.label),
-			sfProps.children,
-			sfProps.help ? el('div', { className: 'help' }, sfProps.help) : null
-		);
-	}
 
 	return el('div', { className: 'silc-wia-settings-panel' },
 
