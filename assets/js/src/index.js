@@ -563,9 +563,9 @@ function WooInsightDashboard() {
 					)
 				)
 			),
-			el('p', {
-				style: { fontSize: '11px', color: '#a7aaad', marginBottom: '20px', maxWidth: 'unset', marginTop: '12px', marginBottom: '0' },
-			}, '\u26A0\uFE0F AI can make mistakes. Always verify important insights before making business decisions.'),
+			el('p', { className: 'silc-wia-permanent-warning'}, 
+				'\u26A0\uFE0F AI can make mistakes. Always verify important insights before making business decisions.'
+			),
 		);
 	}
 
