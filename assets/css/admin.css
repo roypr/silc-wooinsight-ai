@@ -2,10 +2,12 @@
    SILC WooInsight AI — Chat-style Dashboard
    =========================================================================
    Respects the user's WP admin color scheme via CSS custom properties:
-     --wp-admin-theme-color       (primary accent)
-     --wp-admin-theme-color-rgb   (RGB values for rgba())
+     --wp-admin-theme-color           (primary accent)
+     --wp-admin-theme-color-rgb       (RGB values for rgba())
      --wp-admin-theme-color-darker-10
-     --wp-admin-theme-color-darker-20
+
+   Fallbacks are provided via var() second argument so the UI works
+   even when the WP admin color scheme is not present.
    ========================================================================= */
 
 /* Reset WP wrap padding for full-height layout */
@@ -153,7 +155,7 @@
 
 .silc-wia-sidebar-toggle:hover {
 	color: #1d2327;
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.08);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08);
 }
 
 .silc-wia-sidebar-item {
@@ -169,16 +171,15 @@
 	transition: all 0.1s;
 	flex-shrink: 0;
 }
-
 .silc-wia-sidebar-item:hover {
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.08);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08);
 	color: #1d2327;
 }
 
 .silc-wia-sidebar-item.active {
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.08);
-	color: var(--wp-admin-theme-color);
-	border-left-color: var(--wp-admin-theme-color);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08);
+	color: var(--wp-admin-theme-color, #2271b1);
+	border-left-color: var(--wp-admin-theme-color, #2271b1);
 	font-weight: 500;
 }
 
@@ -315,10 +316,9 @@
 	line-height: 1.4;
 	box-sizing: border-box;
 }
-
 .silc-wia-settings-field input:focus {
-	border-color: var(--wp-admin-theme-color);
-	box-shadow: 0 0 0 1px var(--wp-admin-theme-color);
+	border-color: var(--wp-admin-theme-color, #2271b1);
+	box-shadow: 0 0 0 1px var(--wp-admin-theme-color, #2271b1);
 	outline: none;
 }
 
@@ -347,31 +347,28 @@
 }
 
 .silc-wia-settings-provider-links .label {
-	color: #787c82;
+	color: var(--wp-admin-theme-color, #2271b1);
 }
-
 .silc-wia-settings-provider-links .provider-link {
-	color: var(--wp-admin-theme-color);
+	color: var(--wp-admin-theme-color, #2271b1);
 	cursor: pointer;
 	padding: 2px 8px;
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.08);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08);
 	border-radius: 3px;
 	transition: background 0.1s;
 }
-
 .silc-wia-settings-provider-links .provider-link:hover {
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.18);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.18);
 }
 
 /* Key links */
 .silc-wia-settings-key-links {
 	margin-top: 6px;
 	font-size: 11px;
-}
-
 .silc-wia-settings-key-links a {
-	color: var(--wp-admin-theme-color);
+	color: var(--wp-admin-theme-color, #2271b1);
 	text-decoration: none;
+}
 }
 
 .silc-wia-settings-key-links a:hover {
@@ -408,18 +405,17 @@
 .silc-wia-cache-presets .label {
 	color: #787c82;
 }
-
 .silc-wia-cache-presets .preset {
-	color: var(--wp-admin-theme-color);
+	color: var(--wp-admin-theme-color, #2271b1);
 	cursor: pointer;
 	padding: 2px 8px;
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.08);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08);
 	border-radius: 3px;
 	transition: background 0.1s;
 }
 
 .silc-wia-cache-presets .preset:hover {
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.18);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.18);
 }
 
 /* Actions row */
@@ -506,17 +502,16 @@
 	background: #f6f7f7;
 	border-radius: 4px;
 	font-size: 12px;
-	color: var(--wp-admin-theme-color);
+	color: var(--wp-admin-theme-color, #2271b1);
 	margin-bottom: 6px;
 	cursor: pointer;
 	border: 1px solid transparent;
 }
 
 .silc-wia-library-item:hover {
-	border-color: var(--wp-admin-theme-color);
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.08);
+	border-color: var(--wp-admin-theme-color, #2271b1);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08);
 }
-
 .silc-wia-library-item .icon {
 	margin-right: 4px;
 }
@@ -556,15 +551,15 @@
 	background: #f6f7f7;
 	border-radius: 4px;
 	font-size: 12px;
-	color: var(--wp-admin-theme-color);
+	color: var(--wp-admin-theme-color, #2271b1);
 	margin-bottom: 6px;
 	cursor: pointer;
 	border: 1px solid transparent;
 }
 
 .silc-wia-guide-example:hover {
-	border-color: var(--wp-admin-theme-color);
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.08);
+	border-color: var(--wp-admin-theme-color, #2271b1);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08);
 }
 
 .silc-wia-guide-example .desc {
@@ -643,28 +638,26 @@
 	gap: 8px;
 	justify-content: center;
 }
-
 .silc-wia-prompt-chip {
 	display: flex;
 	align-items: center;
 	gap: 6px;
 	padding: 8px 14px;
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.08);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08);
 	border: 1px solid #dcdcde;;
 	border-radius: 20px;
 	font-size: 13px;
-	color: var(--wp-admin-theme-color);
+	color: var(--wp-admin-theme-color, #2271b1);
 	cursor: pointer;
 	transition: all 0.15s;
 	white-space: nowrap;
 }
 
 .silc-wia-prompt-chip:hover {
-	background: var(--wp-admin-theme-color);
+	background: var(--wp-admin-theme-color, #2271b1);
 	color: #fff;
-	border-color: var(--wp-admin-theme-color);
+	border-color: var(--wp-admin-theme-color, #2271b1);
 }
-
 .silc-wia-prompt-chip .icon {
 	font-size: 14px;
 }
@@ -711,6 +704,9 @@
 }
 .silc-wia-chat-input-row .components-text-control__input {
 	flex: 1;
+}
+.silc-wia-chat-input-row .components-text-control__input {
+	flex: 1;
 	min-height: 44px !important;
 	font-size: 14px !important;
 	padding: 10px 14px !important;
@@ -751,8 +747,8 @@
 /* ----------------------------------------------------------------------- */
 
 .silc-wia-result-answer {
-	background: linear-gradient(135deg, rgba(var(--wp-admin-theme-color-rgb), 0.08), rgba(var(--wp-admin-theme-color-rgb), 0.03));
-	border: 1px solid rgba(var(--wp-admin-theme-color-rgb), 0.2);
+	background: linear-gradient(135deg, rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08), rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.03));
+	border: 1px solid rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.2);
 	border-radius: 12px;
 	padding: 24px 28px;
 	animation: silc-wia-fade-in 0.3s ease;
@@ -859,25 +855,23 @@
 	gap: 8px;
 	flex-wrap: wrap;
 }
-
+	
 .silc-wia-list-item-links {
-	display: inline-flex;
-	gap: 4px;
+		display: inline-flex;
+		gap: 4px;
 }
-
 .silc-wia-list-link {
 	font-size: 11px;
 	text-decoration: none;
-	color: var(--wp-admin-theme-color);
+	color: var(--wp-admin-theme-color, #2271b1);
 	padding: 1px 6px;
-	border: 1px solid rgba(var(--wp-admin-theme-color-rgb), 0.25);
+	border: 1px solid rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.25);
 	border-radius: 3px;
 }
 
 .silc-wia-list-link:hover {
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.08);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08);
 }
-
 .silc-wia-list-item-details {
 	margin-top: 6px;
 	display: flex;
@@ -920,7 +914,6 @@
 /* ----------------------------------------------------------------------- */
 /*  LOADING INDICATOR                                                      */
 /* ----------------------------------------------------------------------- */
-
 .silc-wia-loading {
 	display: flex;
 	align-items: center;
@@ -940,7 +933,7 @@
 	width: 6px;
 	height: 6px;
 	border-radius: 50%;
-	background: var(--wp-admin-theme-color);
+	background: var(--wp-admin-theme-color, #2271b1);
 	animation: silc-wia-dot-pulse 1.4s ease-in-out infinite;
 }
 
@@ -994,6 +987,7 @@
 .silc-wia-history-item-panel {
 	padding: 10px 12px;
 	border: 1px solid #f0f0f1;
+	background: #f6f7f7;
 	border-radius: 6px;
 	margin-bottom: 8px;
 	cursor: pointer;
@@ -1001,7 +995,8 @@
 }
 
 .silc-wia-history-item-panel:hover {
-	background: rgba(var(--wp-admin-theme-color-rgb), 0.08);
+	border-color: var(--wp-admin-theme-color, #2271b1);
+	background: rgba(var(--wp-admin-theme-color-rgb, 34, 113, 177), 0.08);
 }
 
 .silc-wia-history-item-panel .q {
@@ -1013,9 +1008,8 @@
 
 .silc-wia-history-item-panel .meta {
 	font-size: 11px;
-	color: #787c82;
+	padding-left: 24px;
 }
-
 .silc-wia-history-item-panel .title-row {
 	display: flex;
 	align-items: center;
