@@ -2,6 +2,13 @@
 
 All notable changes to SILC WooInsight AI will be documented in this file.
 
+## [2.3.1] — 2025
+
+### Fixed
+- **UI/UX improvements** across the dashboard for better visual consistency
+- **Bug fixes** in chart rendering and layout behavior
+- Minor styling refinements for sidebar, panels, and responsive layout
+
 ---
 
 ## [2.3.0] — 2026

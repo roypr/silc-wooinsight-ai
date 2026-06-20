@@ -5,7 +5,7 @@ Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
 WC requires at least: 8.0
-Stable tag: 2.3.0
+Stable tag: 2.3.1
 License: GPL v2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -145,6 +145,11 @@ Results are cached (configurable TTL, default 1 hour) to avoid redundant API cal
 
 == Changelog ==
 
+= 2.3.1 =
+* 🐛 Bug fixes across chart rendering, SQL execution display, and responsive layout
+* 🎨 Visual improvements to sidebar navigation, panel headers, and mobile breakpoints
+* ⚡ Minor performance optimizations and UI polish
+
 = 2.3.0 =
 * ✨ **Insight Library** — 30 built-in queries (10 charts, 12 lists, 8 answers) that work without an API key
 * 🏷️ Guides panel renamed to Library
@@ -178,6 +183,9 @@ Results are cached (configurable TTL, default 1 hour) to avoid redundant API cal
 * Documentation and core architecture
 
 == Upgrade Notice ==
+
+= 2.3.1 =
+Bug fixes and visual improvements. No breaking changes — all existing settings, history, and library items are preserved. Recommended update for a smoother experience.
 
 = 2.3.0 =
 The Guides panel has been replaced with the new Insight Library. All functionality is backward-compatible; existing API settings and history are preserved. The Library adds 30 pre-built queries that work without an API key — ideal for demonstration and evaluation.
