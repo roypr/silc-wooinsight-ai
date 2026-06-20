@@ -14,6 +14,7 @@ import {
 	defaults,
 	pluginUrl,
 	SUGGESTED_PROMPTS,
+	LIBRARY_ITEMS,
 	apiConfigured,
 	getErrorMessage,
 } from './utils.js';
@@ -462,18 +463,32 @@ function WooInsightDashboard() {
 					el('div', {className: 'silc-wia-spacer'}),
 					!apiConfigured
 						? el('p', {
-							style: { color: '#b32d2e', fontSize: '13px', background: '#fcf0f1', padding: '8px 16px', borderRadius: '8px', marginBottom: '20px', maxWidth: '400px' },
-						}, l10n.apiNotConfigured + '. Open the \u2699\uFE0F Settings panel to add your API key.')
+							style: { color: '#8a6d3b', fontSize: '13px', background: '#fcf8e3', padding: '8px 16px', borderRadius: '8px', marginBottom: '20px', maxWidth: '500px' },
+						}, l10n.apiNotConfigured + '. You can still use the queries below without AI, and more are available in the Library panel.')
 						: null,
 					el('div', { className: 'silc-wia-prompts' },
-						SUGGESTED_PROMPTS.map(function (p, i) {
+						(apiConfigured ? SUGGESTED_PROMPTS : LIBRARY_ITEMS.slice(0, 6)).map(function (p, i) {
+							if (apiConfigured) {
+								return el('div', {
+									key: i,
+									className: 'silc-wia-prompt-chip',
+									onClick: function () { handleAsk(p.text); },
+								},
+									el('span', { className: 'icon' }, p.icon),
+									p.text
+								);
+							}
+							var typeIcon = '';
+							if (p.type === 'chart') typeIcon = '\uD83D\uDCCA ';
+							else if (p.type === 'list') typeIcon = '\uD83D\uDCCB ';
+							else if (p.type === 'answer') typeIcon = '\u2139\uFE0F ';
 							return el('div', {
-								key: i,
+								key: p.id || i,
 								className: 'silc-wia-prompt-chip',
-								onClick: function () { handleAsk(p.text); },
+								onClick: function () { handleLibraryItem(p); },
 							},
-								el('span', { className: 'icon' }, p.icon),
-								p.text
+								el('span', { className: 'icon' }, typeIcon),
+								p.question
 							);
 						})
 					)
@@ -504,7 +519,7 @@ function WooInsightDashboard() {
 					)
 				),
 				el('p', {
-					style: { fontSize: '11px', color: '#a7aaad', marginBottom: '20px', maxWidth: 'unset', marginTop: '12px', marginBottom: '0' },
+					style: { fontSize: '11px', color: '#a7aaad', marginBottom: '20px', maxWidth: 'unset', marginTop: '12px' },
 				}, '\u26A0\uFE0F AI can make mistakes. Always verify important insights before making business decisions.')
 			);
 		}

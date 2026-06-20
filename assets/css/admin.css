@@ -671,9 +671,11 @@
 .silc-wia-permanent-warning{
 	font-size: 11px;
 	color: rgb(167, 170, 173);
-	margin-bottom: 12px;
+	margin-bottom: 0;
 	max-width: unset;
-	margin-top: 6px;
+	margin-top: 0;
+	padding: 12px 0;
+	text-align: center;
 }
 /* With results — scrollable */
 .silc-wia-chat-with-results {

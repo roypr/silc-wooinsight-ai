@@ -242,7 +242,7 @@ class SILC_WIA_Admin {
 		require_once SILC_WIA_PATH . 'includes/class-api.php';
 		require_once SILC_WIA_PATH . 'includes/class-library.php';
 		$api_settings    = SILC_WIA_API::get_settings();
-		$api_configured  = ! empty( $api_settings['api_key'] );
+		$api_configured  = ! (empty( $api_settings['api_url'] ) || empty($api_settings['model']) || empty($api_settings['api_key']));
 		$is_reason_model = SILC_WIA_API::is_reasoning_model( $api_settings['model'] ?? '' );
 		$library_items   = SILC_WIA_Library::get_library_for_js();
 
