@@ -67,7 +67,7 @@ export function renderListResult(insightData) {
 	}
 
 	var items = listData.map(function (row, idx) {
-		return renderListItem(row, idx, displayCols);
+		return renderListItem(row, idx, displayCols, listConfig);
 	});
 
 	return el('div', { className: 'silc-wia-result-list', key: 'list' }, items);
@@ -81,22 +81,20 @@ export function renderListResult(insightData) {
  * @param {Array}  displayCols  Column names to display.
  * @return {Object} Element.
  */
-function renderListItem(row, idx, displayCols) {
+function renderListItem(row, idx, displayCols, listConfig) {
 	var rowType = row._row_type || 'generic';
 	switch (rowType) {
 		case 'order':
-			return renderOrderItem(row, idx, displayCols);
+			return renderOrderItem(row, idx, displayCols, listConfig);
 		case 'product':
-			return renderProductItem(row, idx, displayCols);
+			return renderProductItem(row, idx, displayCols, listConfig);
 		case 'customer':
-			return renderCustomerItem(row, idx, displayCols);
+			return renderCustomerItem(row, idx, displayCols, listConfig);
 		default:
-			return renderGenericItem(row, idx, displayCols);
+			return renderGenericItem(row, idx, displayCols, listConfig);
 	}
 }
-
 /**
- * Render an order row.
  *   Title: "Order #123" linked to order edit.
  *   Details: customer_name, status, total, date, etc.
  */
@@ -155,7 +153,7 @@ function renderOrderItem(row, idx, displayCols) {
  *   Left: fixed-width thumbnail placeholder (populated if _thumbnail exists).
  *   Right: title + details.
  */
-function renderProductItem(row, idx, displayCols) {
+function renderProductItem(row, idx, displayCols, listConfig) {
 	var labels = row._labels || {};
 	var formatted = row._formatted || {};
 	var links = row._links || {};
@@ -173,8 +171,13 @@ function renderProductItem(row, idx, displayCols) {
 		}
 	}
 
-	// Use a name-like column as title.
-	var titleCol = findTitleCol(row, displayCols, ['product_name', 'name', 'post_title', 'product']);
+	// Use a name-like column as title (check listConfig.title_column first).
+	var titleCol = null;
+	if (listConfig && listConfig.title_column && row[listConfig.title_column] != null && row[listConfig.title_column] !== '') {
+		titleCol = listConfig.title_column;
+	} else {
+		titleCol = findTitleCol(row, displayCols, ['product_name', 'name', 'post_title', 'product']);
+	}
 	var titleText = titleCol ? (row[titleCol] || '') : ('Product ' + (idx + 1));
 
 	var titleEl;
@@ -294,12 +297,17 @@ function renderCustomerItem(row, idx, displayCols) {
  *   Title: first available value or "Item N".
  *   Details: all non-meta columns.
  */
-function renderGenericItem(row, idx, displayCols) {
+function renderGenericItem(row, idx, displayCols, listConfig) {
 	var labels = row._labels || {};
 	var formatted = row._formatted || {};
 
-	// Use first non-meta column as title.
-	var titleCol = displayCols.length > 0 ? displayCols[0] : null;
+	// Use listConfig.title_column first, then first non-meta column.
+	var titleCol = null;
+	if (listConfig && listConfig.title_column && row[listConfig.title_column] != null && row[listConfig.title_column] !== '') {
+		titleCol = listConfig.title_column;
+	} else {
+		titleCol = displayCols.length > 0 ? displayCols[0] : null;
+	}
 	var titleText = titleCol ? (row[titleCol] || '') : ('Item ' + (idx + 1));
 
 	var details = [];
