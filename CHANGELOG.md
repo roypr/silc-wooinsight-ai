@@ -2,6 +2,17 @@
 
 All notable changes to SILC WooInsight AI will be documented in this file.
 
+## [2.4.0] — 2025
+
+### Added
+- **Plus/minus buttons** on number fields in settings (Max Tokens, Temperature, Cache Duration) for easier adjustment
+- **Hidden heading** before the React root so WordPress admin notices have an anchor point and display correctly
+
+### Fixed
+- **WP admin notices** inside the plugin screen were invisible because there was no heading element for them to anchor after — added a screen-reader-text `<h1>` before `#silc-wia-dashboard`
+
+---
+
 ## [2.3.1] — 2025
 
 ### Fixed
