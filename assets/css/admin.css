@@ -329,6 +329,61 @@
 	line-height: 1.5;
 }
 
+/* Number field with minus / plus buttons */
+.silc-wia-number-field {
+	display: flex;
+	align-items: center;
+	gap: 0;
+}
+
+.silc-wia-number-field input[type="number"] {
+	width: 80px !important;
+	text-align: center;
+	border-radius: 0;
+	-moz-appearance: textfield;
+}
+
+.silc-wia-number-field input[type="number"]::-webkit-inner-spin-button,
+.silc-wia-number-field input[type="number"]::-webkit-outer-spin-button {
+	-webkit-appearance: none;
+	margin: 0;
+}
+
+.silc-wia-number-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 34px;
+	padding: 0;
+	border: 1px solid #dcdcde;
+	background: #f6f7f7;
+	color: #1d2327;
+	cursor: pointer;
+	font-size: 16px;
+	line-height: 1;
+	box-sizing: border-box;
+	transition: background 0.1s;
+}
+
+.silc-wia-number-btn:hover {
+	background: #f0f0f1;
+}
+
+.silc-wia-number-btn:disabled {
+	opacity: 0.4;
+	cursor: default;
+	background: #f6f7f7;
+}
+
+.silc-wia-number-minus {
+	border-radius: 4px 0 0 4px;
+}
+
+.silc-wia-number-plus {
+	border-radius: 0 4px 4px 0;
+}
+
 .silc-wia-settings-field .has-key-indicator {
 	color: #1a7a2e;
 	font-size: 11px;
@@ -382,8 +437,8 @@
 	gap: 8px;
 }
 
-.silc-wia-cache-row input[type="number"] {
-	width: 100px !important;
+.silc-wia-cache-row .silc-wia-number-field input[type="number"] {
+	width: 70px !important;
 	flex-shrink: 0;
 }
 

@@ -121,6 +121,7 @@ class SILC_WIA_Admin {
 	public static function render_page(): void {
 		?>
 		<div class="wrap silc-wia-wrap">
+			<h1 class="screen-reader-text"><?php esc_html_e( 'WooInsight AI', 'silc-wooinsight-ai' ); ?></h1>
 			<div id="silc-wia-dashboard"></div>
 		</div>
 		<?php

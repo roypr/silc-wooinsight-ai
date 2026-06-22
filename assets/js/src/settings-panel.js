@@ -33,6 +33,55 @@ function SettingsField(sfProps) {
 }
 
 /**
+ * Number input with minus / plus buttons.
+ *
+ * @param {Object}   np        Props.
+ * @param {number}   np.value  Current value.
+ * @param {Function} np.onChange
+ * @param {number}   np.min
+ * @param {number}   np.max
+ * @param {number}   np.step
+ * @param {string}   [np.placeholder]
+ * @return {Object} Element.
+ */
+function NumberField(np) {
+	var dec = function () {
+		var v = parseFloat(np.value) || 0;
+		var s = parseFloat(np.step) || 1;
+		np.onChange(Math.max(np.min, +(v - s).toFixed(2)));
+	};
+	var inc = function () {
+		var v = parseFloat(np.value) || 0;
+		var s = parseFloat(np.step) || 1;
+		np.onChange(Math.min(np.max, +(v + s).toFixed(2)));
+	};
+
+	return el('div', { className: 'silc-wia-number-field' },
+		el('button', {
+			type: 'button',
+			className: 'silc-wia-number-btn silc-wia-number-minus',
+			onClick: dec,
+			disabled: (parseFloat(np.value) || 0) <= np.min,
+			'aria-label': 'Decrease',
+		}, '\u2212'),
+		el('input', {
+			type: 'number',
+			value: np.value,
+			placeholder: np.placeholder,
+			min: np.min, max: np.max, step: np.step,
+			onChange: function (e) { np.onChange(e.target.value); },
+		}),
+		el('button', {
+			type: 'button',
+			className: 'silc-wia-number-btn silc-wia-number-plus',
+			onClick: inc,
+			disabled: (parseFloat(np.value) || 0) >= np.max,
+			'aria-label': 'Increase',
+		}, '+')
+	);
+}
+
+/**
  * Render the Settings panel.
  *
  * @param {Object}   props
@@ -180,12 +229,11 @@ export function renderSettingsPanel(props) {
 				label: l10n.settingsMaxTokens || 'Max Tokens',
 				help: 'Maximum length of the AI\u2019s response. Higher = more detailed but slower. 500 is a good starting point.',
 			},
-				el('input', {
-					type: 'number',
+				el(NumberField, {
 					value: formSettings.max_tokens,
 					placeholder: defaults.max_tokens,
 					min: 50, max: 8192, step: 50,
-					onChange: function (e) { updateSetting('max_tokens', e.target.value); },
+					onChange: function (v) { updateSetting('max_tokens', v); },
 				})
 			),
 
@@ -194,12 +242,11 @@ export function renderSettingsPanel(props) {
 				label: l10n.settingsTemp || 'Temperature',
 				help: 'Controls how creative the AI is. Lower values (0.1\u20130.3) produce more consistent SQL. Higher values (0.7+) can be more creative but less reliable.',
 			},
-				el('input', {
-					type: 'number',
+				el(NumberField, {
 					value: formSettings.temperature,
 					placeholder: defaults.temperature,
 					min: 0, max: 2, step: 0.1,
-					onChange: function (e) { updateSetting('temperature', e.target.value); },
+					onChange: function (v) { updateSetting('temperature', v); },
 				})
 			),
 		),
@@ -221,12 +268,11 @@ export function renderSettingsPanel(props) {
 				help: 'How long to remember results for the same question. Recommended: 1\u20136 hours. Set to 0 to disable caching entirely.',
 			},
 				el('div', { className: 'silc-wia-cache-row' },
-					el('input', {
-						type: 'number',
+					el(NumberField, {
 						value: Math.round(parseInt(formSettings.cache_ttl, 10) / 60) || 60,
 						min: 0, max: 10080, step: 15,
-						onChange: function (e) {
-							var minutes = parseInt(e.target.value, 10) || 0;
+						onChange: function (v) {
+							var minutes = parseInt(v, 10) || 0;
 							updateSetting('cache_ttl', Math.max(0, Math.min(10080, minutes)) * 60);
 						},
 					}),
